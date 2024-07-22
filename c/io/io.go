@@ -1,13 +1,16 @@
-package uv
+package io
 
 import (
 	"github.com/goplus/llgo/c"
+	"github.com/goplus/llgo/c/net"
 	_ "unsafe"
 )
 
 const (
 	LLGoPackage = "link: $(pkg-config --libs libuv); -luv"
 )
+
+// ----------------------------------------------
 
 const (
 	LOOP_BLOCK_SIGNAL LoopOption = iota
@@ -20,69 +23,99 @@ const (
 	RUN_NOWAIT
 )
 
+const (
+	UV_LEAVE_GROUP Membership = iota
+	UV_JOIN_GROUP
+)
+
 type LoopOption c.Int
 
 type RunMode c.Int
 
+type OsSock c.Int
+
+type Membership c.Int
+
+// ----------------------------------------------
+
 /* Handle types. */
-type LoopT struct {
+type Loop struct {
 	Unused [0]byte
 }
 
-type HandleT struct {
+type Handle struct {
 }
 
-type DirT struct {
+type Dir struct {
 }
 
-type StreamT struct {
+type Stream struct {
 }
 
-type TcpT struct {
+type Tcp struct {
 }
 
-type UdpT struct {
+type Udp struct {
 }
 
-type PipeT struct {
+type Pipe struct {
 }
 
-type TtyT struct {
+type Tty struct {
 }
 
-type PollT struct {
+type Poll struct {
 }
 
-type TimerT struct {
+type Timer struct {
 }
 
-type PrepareT struct {
+type Prepare struct {
 }
 
-type CheckT struct {
+type Check struct {
 }
 
-type IdleT struct {
+type Idle struct {
 }
 
-type AsyncT struct {
+type Async struct {
 }
 
-type ProcessT struct {
+type Process struct {
 }
 
-type FsEventT struct {
+type FsEvent struct {
 }
 
-type FsPollT struct {
+type FsPoll struct {
 }
 
-type SignalT struct {
+type Signal struct {
 }
 
 /* Request types. */
 
+type GetAddrInfo struct {
+}
+
+type GetNameInfo struct {
+}
+
+type Connect struct {
+}
+
+type UdpSend struct {
+}
+
 /* None of the above. */
+
+// ----------------------------------------------
+
+type Buf struct {
+	base *c.Char
+	len  uintptr
+}
 
 // ----------------------------------------------
 
@@ -99,6 +132,15 @@ type CallocFunc func(count uintptr, size uintptr) c.Pointer
 type FreeFunc func(ptr c.Pointer)
 
 // ----------------------------------------------
+
+// llgo:type C
+type AllocCb func(handle *Handle, suggestedSize uintptr, buf *Buf)
+
+// llgo:type C
+type GetaddrinfoCb func(req *GetAddrInfo, status c.Int, res *net.AddrInfo)
+
+// llgo:type C
+type GetnameinfoCb func(req *GetNameInfo, status c.Int, hostname *c.Char, service *c.Char)
 
 // ----------------------------------------------
 
@@ -119,59 +161,59 @@ func ReplaceAllocator(mallocFunc MallocFunc, reallocFunc ReallocFunc, callocFunc
 /* LoopT related function and method */
 
 //go:linkname DefaultLoop C.uv_default_loop
-func DefaultLoop() *LoopT
+func DefaultLoop() *Loop
 
 //go:linkname LoopSize C.uv_loop_size
 func LoopSize() uintptr
 
-// llgo:link (*LoopT).Init C.uv_loop_init
-func (loop *LoopT) Init() c.Int {
+// llgo:link (*Loop).Init C.uv_loop_init
+func (loop *Loop) Init() c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Close C.uv_loop_close
-func (loop *LoopT) Close() c.Int {
+// llgo:link (*Loop).Close C.uv_loop_close
+func (loop *Loop) Close() c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Alive C.uv_loop_alive
-func (loop *LoopT) Alive() c.Int {
+// llgo:link (*Loop).Alive C.uv_loop_alive
+func (loop *Loop) Alive() c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Configure C.uv_loop_configure
-func (loop *LoopT) Configure(option LoopOption, __llgo_va_list ...any) c.Int {
+// llgo:link (*Loop).Configure C.uv_loop_configure
+func (loop *Loop) Configure(option LoopOption, __llgo_va_list ...any) c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Fork C.uv_loop_fork
-func (loop *LoopT) Fork() c.Int {
+// llgo:link (*Loop).Fork C.uv_loop_fork
+func (loop *Loop) Fork() c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Run C.uv_run
-func (loop *LoopT) Run(mode RunMode) c.Int {
+// llgo:link (*Loop).Run C.uv_run
+func (loop *Loop) Run(mode RunMode) c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).Stop C.uv_stop
-func (loop *LoopT) Stop() {}
+// llgo:link (*Loop).Stop C.uv_stop
+func (loop *Loop) Stop() {}
 
-// llgo:link (*LoopT).UpdateTime C.uv_update_time
-func (loop *LoopT) UpdateTime() {}
+// llgo:link (*Loop).UpdateTime C.uv_update_time
+func (loop *Loop) UpdateTime() {}
 
-// llgo:link (*LoopT).Now C.uv_now
-func (loop *LoopT) Now() uint64 {
+// llgo:link (*Loop).Now C.uv_now
+func (loop *Loop) Now() uint64 {
 	return 0
 }
 
-// llgo:link (*LoopT).BackendFd C.uv_backend_fd
-func (loop *LoopT) BackendFd() c.Int {
+// llgo:link (*Loop).BackendFd C.uv_backend_fd
+func (loop *Loop) BackendFd() c.Int {
 	return 0
 }
 
-// llgo:link (*LoopT).BackendTimeout C.uv_backend_timeout
-func (loop *LoopT) BackendTimeout() c.Int {
+// llgo:link (*Loop).BackendTimeout C.uv_backend_timeout
+func (loop *Loop) BackendTimeout() c.Int {
 	return 0
 }
 
@@ -179,13 +221,30 @@ func (loop *LoopT) BackendTimeout() c.Int {
 
 /* HandleT related function and method */
 
-// llgo:link (*HandleT).Ref C.uv_ref
-func (handle *HandleT) Ref() {}
+// llgo:link (*Handle).Ref C.uv_ref
+func (handle *Handle) Ref() {}
 
-// llgo:link (*HandleT).Unref C.uv_unref
-func (handle *HandleT) Unref() {}
+// llgo:link (*Handle).Unref C.uv_unref
+func (handle *Handle) Unref() {}
 
-// llgo:link (*HandleT).HasRef C.uv_has_ref
-func (handle *HandleT) HasRef() c.Int {
+// llgo:link (*Handle).HasRef C.uv_has_ref
+func (handle *Handle) HasRef() c.Int {
 	return 0
 }
+
+// ----------------------------------------------
+
+/* Getaddrinfo related function and method */
+
+//go:linkname Getaddrinfo C.uv_getaddrinfo
+func Getaddrinfo(loop *Loop, req *GetAddrInfo, getaddrinfoCb GetaddrinfoCb, node *c.Char, service *c.Char, hints *net.AddrInfo) c.Int
+
+//go:linkname Freeaddrinfo C.uv_freeaddrinfo
+func Freeaddrinfo(addrInfo *net.AddrInfo)
+
+// ----------------------------------------------
+
+/* Getnameinfo related function and method */
+
+//go:linkname Getnameinfo C.uv_getnameinfo
+func Getnameinfo(loop *Loop, req *GetNameInfo, getnameinfoCb GetnameinfoCb, addr *net.SockAddr, flags c.Int) c.Int
