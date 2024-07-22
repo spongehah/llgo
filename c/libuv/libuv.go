@@ -9,6 +9,20 @@ const (
 	LLGoPackage = "link: $(pkg-config --libs libuv); -luv"
 )
 
+// ----------------------------------------------
+
+const (
+	RUN_DEFAULT RunMode = iota
+	RUN_ONCE
+	RUN_NOWAIT
+)
+
+type RunMode int
+
+// ----------------------------------------------
+
+/* Handle types. */
+
 type Loop struct {
 	Unused [0]byte
 }
@@ -17,8 +31,19 @@ type Handle struct {
 	Unused [0]byte
 }
 
+type Buf struct {
+	Base *c.Char
+	Len  uintptr
+}
+
+// ----------------------------------------------
+
+/* Function type */
+
 // llgo:type C
 type WalkCb func(handle *Handle, arg c.Pointer)
+
+// ----------------------------------------------
 
 //go:linkname LoopSize C.uv_loop_size
 func LoopSize() uintptr
@@ -60,7 +85,7 @@ func (l *Loop) Alive() c.Int {
 }
 
 // llgo:link (*Loop).Close C.uv_loop_close
-func (l *Loop) Close(loop *Loop) c.Int {
+func (l *Loop) Close() c.Int {
 	return 0
 }
 
@@ -111,3 +136,6 @@ func (h *Handle) Unref() {
 func (h *Handle) HasRef() int {
 	return 0
 }
+
+//go:linkname InitBuf C.uv_buf_init
+func InitBuf(base *c.Char, len c.Uint) Buf
