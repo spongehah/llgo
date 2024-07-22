@@ -1,4 +1,4 @@
-package io
+package libuv
 
 import (
 	"github.com/goplus/llgo/c"
@@ -42,11 +42,14 @@ type File struct {
 	req  *Fs
 }
 
+// llgo:type C
 type FsCb func(req *Fs)
 
-type FsEventCb func(handle *FsEvent, filename string, events int, status int)
+// llgo:type C
+type FsEventCb func(handle *FsEvent, filename string, events c.Int, status c.Int)
 
-type FsPollCb func(handle *FsPoll, status int, events int)
+// llgo:type C
+type FsPollCb func(handle *FsPoll, status c.Int, events c.Int)
 
 /* Request types. */
 
@@ -61,142 +64,142 @@ func FsReqCleanup(req *Fs)
 func DefaultLoop() *Loop
 
 //go:linkname FsOpen C.uv_fs_open
-func FsOpen(loop *Loop, req *Fs, path string, flags int, mode int, cb FsCb) int
+func FsOpen(loop *Loop, req *Fs, path string, flags c.Int, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsClose C.uv_fs_close
-func FsClose(loop *Loop, req *Fs, file int, cb FsCb) int
+func FsClose(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
 
 //go:linkname FsRead C.uv_fs_read
-func FsRead(loop *Loop, req *Fs, file int, buf []byte, offset int, cb FsCb) int
+func FsRead(loop *Loop, req *Fs, file c.Int, buf []byte, offset c.Int, cb FsCb) c.Int
 
 //go:linkname FsWrite C.uv_fs_write
-func FsWrite(loop *Loop, req *Fs, file int, buf []byte, offset int, cb FsCb) int
+func FsWrite(loop *Loop, req *Fs, file c.Int, buf []byte, offset c.Int, cb FsCb) c.Int
 
 //go:linkname FsUnlink C.uv_fs_unlink
-func FsUnlink(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsUnlink(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsMkdir C.uv_fs_mkdir
-func FsMkdir(loop *Loop, req *Fs, path string, mode int, cb FsCb) int
+func FsMkdir(loop *Loop, req *Fs, path string, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsMkdtemp C.uv_fs_mkdtemp
-func FsMkdtemp(loop *Loop, req *Fs, tpl string, cb FsCb) int
+func FsMkdtemp(loop *Loop, req *Fs, tpl string, cb FsCb) c.Int
 
 //go:linkname FsMkStemp C.uv_fs_mkstemp
-func FsMkStemp(loop *Loop, req *Fs, tpl string, cb FsCb) int
+func FsMkStemp(loop *Loop, req *Fs, tpl string, cb FsCb) c.Int
 
 //go:linkname FsRmdir C.uv_fs_rmdir
-func FsRmdir(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsRmdir(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsStat C.uv_fs_stat
-func FsStat(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsStat(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsFstat C.uv_fs_fstat
-func FsFstat(loop *Loop, req *Fs, file int, cb FsCb) int
+func FsFstat(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
 
 //go:linkname FsRename C.uv_fs_rename
-func FsRename(loop *Loop, req *Fs, path string, newPath string, cb FsCb) int
+func FsRename(loop *Loop, req *Fs, path string, newPath string, cb FsCb) c.Int
 
 //go:linkname FsFsync C.uv_fs_fsync
-func FsFsync(loop *Loop, req *Fs, file int, cb FsCb) int
+func FsFsync(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
 
 //go:linkname FsFdatasync C.uv_fs_fdatasync
-func FsFdatasync(loop *Loop, req *Fs, file int, cb FsCb) int
+func FsFdatasync(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
 
 //go:linkname FsFtruncate C.uv_fs_ftruncate
-func FsFtruncate(loop *Loop, req *Fs, file int, offset int, cb FsCb) int
+func FsFtruncate(loop *Loop, req *Fs, file c.Int, offset c.Int, cb FsCb) c.Int
 
 //go:linkname FsSendfile C.uv_fs_sendfile
-func FsSendfile(loop *Loop, req *Fs, outFd int, inFd int, inOffset int, length int, cb FsCb) int
+func FsSendfile(loop *Loop, req *Fs, outFd c.Int, inFd c.Int, inOffset c.Int, length c.Int, cb FsCb) c.Int
 
 //go:linkname FsAccess C.uv_fs_access
-func FsAccess(loop *Loop, req *Fs, path string, flags int, cb FsCb) int
+func FsAccess(loop *Loop, req *Fs, path string, flags c.Int, cb FsCb) c.Int
 
 //go:linkname FsChmod C.uv_fs_chmod
-func FsChmod(loop *Loop, req *Fs, path string, mode int, cb FsCb) int
+func FsChmod(loop *Loop, req *Fs, path string, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsFchmod C.uv_fs_fchmod
-func FsFchmod(loop *Loop, req *Fs, file int, mode int, cb FsCb) int
+func FsFchmod(loop *Loop, req *Fs, file c.Int, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsUtime C.uv_fs_utime
-func FsUtime(loop *Loop, req *Fs, path string, atime int, mtime int, cb FsCb) int
+func FsUtime(loop *Loop, req *Fs, path string, atime c.Int, mtime c.Int, cb FsCb) c.Int
 
 //go:linkname FsFutime C.uv_fs_futime
-func FsFutime(loop *Loop, req *Fs, file int, atime int, mtime int, cb FsCb) int
+func FsFutime(loop *Loop, req *Fs, file c.Int, atime c.Int, mtime c.Int, cb FsCb) c.Int
 
 //go:linkname FsLutime C.uv_fs_lutime
-func FsLutime(loop *Loop, req *Fs, path string, atime int, mtime int, cb FsCb) int
+func FsLutime(loop *Loop, req *Fs, path string, atime c.Int, mtime c.Int, cb FsCb) c.Int
 
 //go:linkname FsLink C.uv_fs_link
-func FsLink(loop *Loop, req *Fs, path string, newPath string, cb FsCb) int
+func FsLink(loop *Loop, req *Fs, path string, newPath string, cb FsCb) c.Int
 
 //go:linkname FsSymlink C.uv_fs_symlink
-func FsSymlink(loop *Loop, req *Fs, path string, newPath string, flags int, cb FsCb) int
+func FsSymlink(loop *Loop, req *Fs, path string, newPath string, flags c.Int, cb FsCb) c.Int
 
 //go:linkname FsReadlink C.uv_fs_read
-func FsReadlink(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsReadlink(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsRealpath C.uv_fs_realpath
-func FsRealpath(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsRealpath(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsCopyfile C.uv_fs_copyfile
-func FsCopyfile(loop *Loop, req *Fs, path string, newPath string, flags int, cb FsCb) int
+func FsCopyfile(loop *Loop, req *Fs, path string, newPath string, flags c.Int, cb FsCb) c.Int
 
 //go:linkname FsScandir C.uv_fs_scandir
-func FsScandir(loop *Loop, req *Fs, path string, flags int, cb FsCb) int
+func FsScandir(loop *Loop, req *Fs, path string, flags c.Int, cb FsCb) c.Int
 
 //go:linkname FsScandirNext C.uv_fs_scandir_next
-func FsScandirNext(req *Fs, ent *Dirent) int
+func FsScandirNext(req *Fs, ent *Dirent) c.Int
 
 //go:linkname FsOpenDir C.uv_fs_opendir
-func FsOpenDir(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsOpenDir(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsReaddir C.uv_fs_readdir
-func FsReaddir(loop *Loop, req *Fs, dir int, cb FsCb) int
+func FsReaddir(loop *Loop, req *Fs, dir c.Int, cb FsCb) c.Int
 
 //go:linkname FsCloseDir C.uv_fs_closedir
-func FsCloseDir(loop *Loop, req *Fs) int
+func FsCloseDir(loop *Loop, req *Fs) c.Int
 
 //go:linkname FsStatfs C.uv_fs_statfs
-func FsStatfs(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsStatfs(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsChown C.uv_fs_chown
-func FsChown(loop *Loop, req *Fs, path string, uid int, gid int, cb FsCb) int
+func FsChown(loop *Loop, req *Fs, path string, uid c.Int, gid c.Int, cb FsCb) c.Int
 
 //go:linkname FsFchown C.uv_fs_fchown
-func FsFchown(loop *Loop, req *Fs, file int, uid int, gid int, cb FsCb) int
+func FsFchown(loop *Loop, req *Fs, file c.Int, uid c.Int, gid c.Int, cb FsCb) c.Int
 
 //go:linkname FsLchown C.uv_fs_lchown
-func FsLchown(loop *Loop, req *Fs, path string, uid int, gid int, cb FsCb) int
+func FsLchown(loop *Loop, req *Fs, path string, uid c.Int, gid c.Int, cb FsCb) c.Int
 
 //go:linkname FsLstat C.uv_fs_lstat
-func FsLstat(loop *Loop, req *Fs, path string, cb FsCb) int
+func FsLstat(loop *Loop, req *Fs, path string, cb FsCb) c.Int
 
 //go:linkname FsEventInit C.uv_fs_event_init
-func FsEventInit(loop *Loop, handle *FsEvent) int
+func FsEventInit(loop *Loop, handle *FsEvent) c.Int
 
 //go:linkname FsEventStart C.uv_fs_event_start
-func FsEventStart(handle *FsEvent, cb FsEventCb, path string, flags int) int
+func FsEventStart(handle *FsEvent, cb FsEventCb, path string, flags c.Int) c.Int
 
 //go:linkname FsEventStop C.uv_fs_event_stop
-func FsEventStop(handle *FsEvent) int
+func FsEventStop(handle *FsEvent) c.Int
 
 //go:linkname FsEventClose C.uv_fs_event_close
-func FsEventClose(handle *FsEvent) int
+func FsEventClose(handle *FsEvent) c.Int
 
 //go:linkname FsEventGetpath C.uv_fs_event_getpath
 func FsEventGetpath(handle *FsEvent) string
 
 //go:linkname FsPollInit C.uv_fs_poll_init
-func FsPollInit(loop *Loop, handle *FsPoll) int
+func FsPollInit(loop *Loop, handle *FsPoll) c.Int
 
 //go:linkname FsPollStart C.uv_fs_poll_start
-func FsPollStart(handle *FsPoll, cb FsPollCb, path string, interval uint) int
+func FsPollStart(handle *FsPoll, cb FsPollCb, path string, interval uint) c.Int
 
 //go:linkname FsPollStop C.uv_fs_poll_stop
-func FsPollStop(handle *FsPoll) int
+func FsPollStop(handle *FsPoll) c.Int
 
 //go:linkname FsPollClose C.uv_fs_poll_close
-func FsPollClose(handle *FsPoll) int
+func FsPollClose(handle *FsPoll) c.Int
 
 //go:linkname FsPollGetPath C.uv_fs_poll_getpath
 func FsPollGetPath(handle *FsPoll) string

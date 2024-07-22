@@ -1,6 +1,7 @@
-package io
+package libuv
 
 import (
+	"github.com/goplus/llgo/c"
 	_ "unsafe"
 )
 
@@ -16,8 +17,19 @@ type Handle struct {
 	Unused [0]byte
 }
 
+// llgo:type C
+type WalkCb func(handle *Handle, arg c.Pointer)
+
+//go:linkname LoopSize C.uv_loop_size
+func LoopSize() uintptr
+
+// llgo:link (*Loop).Init C.uv_loop_init
+func (loop *Loop) Init() c.Int {
+	return 0
+}
+
 // llgo:link (*Loop).Run C.uv_loop_run
-func (l *Loop) Run(mode int) int {
+func (l *Loop) Run(mode c.Int) c.Int {
 	return 0
 }
 
@@ -43,19 +55,22 @@ func (l *Loop) Delete() {
 }
 
 // llgo:link (*Loop).Alive C.uv_loop_alive
-func (l *Loop) Alive() int {
+func (l *Loop) Alive() c.Int {
 	return 0
 }
 
 // llgo:link (*Loop).Close C.uv_loop_close
-func (l *Loop) Close(loop *Loop) {
-	return
+func (l *Loop) Close(loop *Loop) c.Int {
+	return 0
 }
 
 // llgo:link (*Loop).Configure C.uv_loop_configure
-func (l *Loop) Configure(loop *Loop, option int, arg int) int {
+func (l *Loop) Configure(loop *Loop, option c.Int, arg c.Int) c.Int {
 	return 0
 }
+
+// llgo:link (*Loop).Walk C.uv_walk
+func (loop *Loop) Walk(walkCb WalkCb, arg c.Pointer) {}
 
 // llgo:link (*Loop).Fork C.uv_loop_fork
 func (l *Loop) Fork(loop *Loop) int {
