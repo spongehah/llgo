@@ -187,8 +187,6 @@ type UdpSend struct {
 	Unused [0]byte
 }
 
-/* None of the above. */
-
 // ----------------------------------------------
 
 type Buf struct {
@@ -256,70 +254,6 @@ func ReplaceAllocator(mallocFunc MallocFunc, reallocFunc ReallocFunc, callocFunc
 func (shutdown *Shutdown) Shutdown(stream *Stream, shutdownCb ShutdownCb) c.Int {
 	return 0
 }
-
-// ----------------------------------------------
-
-/* LoopT related function and method */
-
-//go:linkname DefaultLoop C.uv_default_loop
-func DefaultLoop() *Loop
-
-//go:linkname LoopSize C.uv_loop_size
-func LoopSize() uintptr
-
-// llgo:link (*Loop).Init C.uv_loop_init
-func (loop *Loop) Init() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Close C.uv_loop_close
-func (loop *Loop) Close() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Alive C.uv_loop_alive
-func (loop *Loop) Alive() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Configure C.uv_loop_configure
-func (loop *Loop) Configure(option LoopOption, __llgo_va_list ...any) c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Fork C.uv_loop_fork
-func (loop *Loop) Fork() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Run C.uv_run
-func (loop *Loop) Run(mode RunMode) c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Stop C.uv_stop
-func (loop *Loop) Stop() {}
-
-// llgo:link (*Loop).UpdateTime C.uv_update_time
-func (loop *Loop) UpdateTime() {}
-
-// llgo:link (*Loop).Now C.uv_now
-func (loop *Loop) Now() uint64 {
-	return 0
-}
-
-// llgo:link (*Loop).BackendFd C.uv_backend_fd
-func (loop *Loop) BackendFd() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).BackendTimeout C.uv_backend_timeout
-func (loop *Loop) BackendTimeout() c.Int {
-	return 0
-}
-
-// llgo:link (*Loop).Walk C.uv_walk
-func (loop *Loop) Walk(walkCb WalkCb, arg c.Pointer) {}
 
 // ----------------------------------------------
 

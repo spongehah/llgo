@@ -6,6 +6,11 @@ import (
 	_ "unsafe"
 )
 
+const (
+	/* Used with uv_tcp_bind, when an IPv6 address is used. */
+	TCP_IPV6ONLY TcpFlags = 1
+)
+
 /*
  * UDP support.
  */
@@ -51,13 +56,80 @@ const (
 	UDP_RECVMMSG UdpFlags = 256
 )
 
+type TcpFlags c.Int
+
 type UdpFlags c.Int
+
+// ----------------------------------------------
+
+/* Function type */
+
+// llgo:type C
+type CloseCb func(handle *Handle)
+
+// llgo:type C
+type ConnectCb func(req *Connect, status c.Int)
 
 // llgo:type C
 type UdpSendCb func(req *UdpSend, status c.Int)
 
 // llgo:type C
 type UdpRecvCb func(handle *Udp, nread c.Long, buf *Buf, addr *net.SockAddr, flags c.Uint)
+
+// ----------------------------------------------
+
+/* TcpT related function and method */
+
+//go:linkname InitTcp C.uv_tcp_init
+func InitTcp(loop *Loop, tcp *Tcp) c.Int
+
+//go:linkname InitTcpEx C.uv_tcp_init_ex
+func InitTcpEx(loop *Loop, tcp *Tcp, flags c.Uint) c.Int
+
+// llgo:link (*Tcp).Open C.uv_tcp_open
+func (tcp *Tcp) Open(sock OsSock) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).Nodelay C.uv_tcp_nodelay
+func (tcp *Tcp) Nodelay(enable c.Int) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).KeepAlive C.uv_tcp_keepalive
+func (tcp *Tcp) KeepAlive(enable c.Int, delay c.Uint) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).SimultaneousAccepts C.uv_tcp_simultaneous_accepts
+func (tcp *Tcp) SimultaneousAccepts(enable c.Int) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).Bind C.uv_tcp_bind
+func (tcp *Tcp) Bind(addr *net.SockAddr, flags c.Uint) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).Getsockname C.uv_tcp_getsockname
+func (tcp *Tcp) Getsockname(name *net.SockAddr, nameLen *c.Int) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).Getpeername C.uv_tcp_getpeername
+func (tcp *Tcp) Getpeername(name *net.SockAddr, nameLen *c.Int) c.Int {
+	return 0
+}
+
+// llgo:link (*Tcp).CloseReset C.uv_tcp_close_reset
+func (tcp *Tcp) CloseReset(closeCb CloseCb) c.Int {
+	return 0
+}
+
+//go:linkname TcpConnect C.uv_tcp_connect
+func TcpConnect(req *Connect, tcp *Tcp, addr *net.SockAddr, connectCb ConnectCb) c.Int
+
+// ----------------------------------------------
 
 /* UdpT related function and method */
 
@@ -159,3 +231,26 @@ func (udp *Udp) GetSendQueueSize() uintptr {
 func (udp *Udp) GetSendQueueCount() uintptr {
 	return 0
 }
+
+// ----------------------------------------------
+
+//go:linkname Ip4Addr C.uv_ip4_addr
+func Ip4Addr(ip *c.Char, port c.Int, addr *net.SockaddrIn) c.Int
+
+//go:linkname Ip6Addr C.uv_ip6_addr
+func Ip6Addr(ip *c.Char, port c.Int, addr *net.SockaddrIn6) c.Int
+
+//go:linkname Ip4Name C.uv_ip4_name
+func Ip4Name(src *net.SockaddrIn, dst *c.Char, size uintptr) c.Int
+
+//go:linkname Ip6Name C.uv_ip6_name
+func Ip6Name(src *net.SockaddrIn6, dst *c.Char, size uintptr) c.Int
+
+//go:linkname IpName C.uv_ip_name
+func IpName(src *net.SockAddr, dst *c.Char, size uintptr) c.Int
+
+//go:linkname InetNtop C.uv_inet_ntop
+func InetNtop(af c.Int, src c.Pointer, dst *c.Char, size uintptr) c.Int
+
+//go:linkname InetPton C.uv_inet_pton
+func InetPton(af c.Int, src *c.Char, dst c.Pointer) c.Int
