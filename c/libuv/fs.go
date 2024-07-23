@@ -141,10 +141,10 @@ func FsOpen(loop *Loop, req *Fs, path *c.Char, flags c.Int, mode c.Int, cb FsCb)
 func FsClose(loop *Loop, req *Fs, file UvFile, cb FsCb) c.Int
 
 //go:linkname FsRead C.uv_fs_read
-func FsRead(loop *Loop, req *Fs, file UvFile, bufs []Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
+func FsRead(loop *Loop, req *Fs, file UvFile, bufs *Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
 
 //go:linkname FsWrite C.uv_fs_write
-func FsWrite(loop *Loop, req *Fs, file UvFile, bufs []Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
+func FsWrite(loop *Loop, req *Fs, file UvFile, bufs *Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
 
 //go:linkname FsUnlink C.uv_fs_unlink
 func FsUnlink(loop *Loop, req *Fs, path *c.Char, cb FsCb) c.Int
@@ -330,12 +330,12 @@ func (f *File) Close(file int, cb FsCb) int {
 }
 
 // Read reads data from a file descriptor into a buffer at a specified offset.
-func (f *File) Read(file int, bufs []Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+func (f *File) Read(file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
 	return int(FsRead(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
 // Write writes data to a file descriptor from a buffer at a specified offset.
-func (f *File) Write(file int, bufs []Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+func (f *File) Write(file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
 	return int(FsWrite(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
