@@ -61,6 +61,8 @@ type FsType int
 
 type DirentType int
 
+// ----------------------------------------------
+
 /* Handle types. */
 
 type Fs struct {
@@ -89,6 +91,10 @@ type Stat struct {
 	Unused [0]byte
 }
 
+// ----------------------------------------------
+
+/* Function type */
+
 // llgo:type C
 type FsCb func(req *Fs)
 
@@ -97,10 +103,6 @@ type FsEventCb func(handle *FsEvent, filename *c.Char, events c.Int, status c.In
 
 // llgo:type C
 type FsPollCb func(handle *FsPoll, status c.Int, events c.Int)
-
-/* Request types. */
-
-/* None of the above. */
 
 // ----------------------------------------------
 
