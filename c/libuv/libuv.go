@@ -60,6 +60,8 @@ const (
 	REQ_TYPE_MAX
 )
 
+type RunMode int
+
 type LoopOption c.Int
 
 type Membership c.Int
@@ -119,18 +121,6 @@ type Async struct {
 }
 
 type Process struct {
-	Unused [0]byte
-}
-
-type FsEvent struct {
-	Unused [0]byte
-}
-
-type FsPoll struct {
-	Unused [0]byte
-}
-
-type Signal struct {
 	Unused [0]byte
 }
 
