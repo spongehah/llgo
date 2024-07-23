@@ -61,6 +61,8 @@ type FsType c.Int
 
 type DirentType c.Int
 
+type UvFile c.Int
+
 // ----------------------------------------------
 
 /* Handle types. */
@@ -136,13 +138,13 @@ func DefaultLoop() *Loop
 func FsOpen(loop *Loop, req *Fs, path *c.Char, flags c.Int, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsClose C.uv_fs_close
-func FsClose(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
+func FsClose(loop *Loop, req *Fs, file UvFile, cb FsCb) c.Int
 
 //go:linkname FsRead C.uv_fs_read
-func FsRead(loop *Loop, req *Fs, file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) c.Int
+func FsRead(loop *Loop, req *Fs, file UvFile, bufs []Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
 
 //go:linkname FsWrite C.uv_fs_write
-func FsWrite(loop *Loop, req *Fs, file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) c.Int
+func FsWrite(loop *Loop, req *Fs, file UvFile, bufs []Buf, nbufs c.Uint, offset c.LongLong, cb FsCb) c.Int
 
 //go:linkname FsUnlink C.uv_fs_unlink
 func FsUnlink(loop *Loop, req *Fs, path *c.Char, cb FsCb) c.Int
@@ -163,22 +165,22 @@ func FsRmdir(loop *Loop, req *Fs, path *c.Char, cb FsCb) c.Int
 func FsStat(loop *Loop, req *Fs, path *c.Char, cb FsCb) c.Int
 
 //go:linkname FsFstat C.uv_fs_fstat
-func FsFstat(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
+func FsFstat(loop *Loop, req *Fs, file UvFile, cb FsCb) c.Int
 
 //go:linkname FsRename C.uv_fs_rename
 func FsRename(loop *Loop, req *Fs, path *c.Char, newPath *c.Char, cb FsCb) c.Int
 
 //go:linkname FsFsync C.uv_fs_fsync
-func FsFsync(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
+func FsFsync(loop *Loop, req *Fs, file UvFile, cb FsCb) c.Int
 
 //go:linkname FsFdatasync C.uv_fs_fdatasync
-func FsFdatasync(loop *Loop, req *Fs, file c.Int, cb FsCb) c.Int
+func FsFdatasync(loop *Loop, req *Fs, file UvFile, cb FsCb) c.Int
 
 //go:linkname FsFtruncate C.uv_fs_ftruncate
-func FsFtruncate(loop *Loop, req *Fs, file c.Int, offset c.Int, cb FsCb) c.Int
+func FsFtruncate(loop *Loop, req *Fs, file UvFile, offset c.LongLong, cb FsCb) c.Int
 
 //go:linkname FsSendfile C.uv_fs_sendfile
-func FsSendfile(loop *Loop, req *Fs, outFd c.Int, inFd c.Int, inOffset c.Int, length c.Int, cb FsCb) c.Int
+func FsSendfile(loop *Loop, req *Fs, outFd c.Int, inFd c.Int, inOffset c.LongLong, length c.Int, cb FsCb) c.Int
 
 //go:linkname FsAccess C.uv_fs_access
 func FsAccess(loop *Loop, req *Fs, path *c.Char, flags c.Int, cb FsCb) c.Int
@@ -187,13 +189,13 @@ func FsAccess(loop *Loop, req *Fs, path *c.Char, flags c.Int, cb FsCb) c.Int
 func FsChmod(loop *Loop, req *Fs, path *c.Char, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsFchmod C.uv_fs_fchmod
-func FsFchmod(loop *Loop, req *Fs, file c.Int, mode c.Int, cb FsCb) c.Int
+func FsFchmod(loop *Loop, req *Fs, file UvFile, mode c.Int, cb FsCb) c.Int
 
 //go:linkname FsUtime C.uv_fs_utime
 func FsUtime(loop *Loop, req *Fs, path *c.Char, atime c.Int, mtime c.Int, cb FsCb) c.Int
 
 //go:linkname FsFutime C.uv_fs_futime
-func FsFutime(loop *Loop, req *Fs, file c.Int, atime c.Int, mtime c.Int, cb FsCb) c.Int
+func FsFutime(loop *Loop, req *Fs, file UvFile, atime c.Int, mtime c.Int, cb FsCb) c.Int
 
 //go:linkname FsLutime C.uv_fs_lutime
 func FsLutime(loop *Loop, req *Fs, path *c.Char, atime c.Int, mtime c.Int, cb FsCb) c.Int
@@ -235,7 +237,7 @@ func FsStatfs(loop *Loop, req *Fs, path *c.Char, cb FsCb) c.Int
 func FsChown(loop *Loop, req *Fs, path *c.Char, uid c.Int, gid c.Int, cb FsCb) c.Int
 
 //go:linkname FsFchown C.uv_fs_fchown
-func FsFchown(loop *Loop, req *Fs, file c.Int, uid c.Int, gid c.Int, cb FsCb) c.Int
+func FsFchown(loop *Loop, req *Fs, file UvFile, uid c.Int, gid c.Int, cb FsCb) c.Int
 
 //go:linkname FsLchown C.uv_fs_lchown
 func FsLchown(loop *Loop, req *Fs, path *c.Char, uid c.Int, gid c.Int, cb FsCb) c.Int
@@ -324,17 +326,17 @@ func (f *File) Open(path string, flags int, mode int, cb FsCb) int {
 
 // Close closes a file descriptor.
 func (f *File) Close(file int, cb FsCb) int {
-	return int(FsClose(f.Loop, f.Req, c.Int(file), cb))
+	return int(FsClose(f.Loop, f.Req, UvFile(file), cb))
 }
 
 // Read reads data from a file descriptor into a buffer at a specified offset.
-func (f *File) Read(file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) int {
-	return int(FsRead(f.Loop, f.Req, c.Int(file), bufs, nbufs, c.Int(offset), cb))
+func (f *File) Read(file int, bufs []Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+	return int(FsRead(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
 // Write writes data to a file descriptor from a buffer at a specified offset.
-func (f *File) Write(file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) int {
-	return int(FsWrite(f.Loop, f.Req, file, bufs, nbufs, offset, cb))
+func (f *File) Write(file int, bufs []Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+	return int(FsWrite(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
 // Unlink deletes a file specified by the path.
@@ -369,7 +371,7 @@ func (f *File) Stat(path string, cb FsCb) int {
 
 // Fstat retrieves status information about a file descriptor.
 func (f *File) Fstat(file int, cb FsCb) int {
-	return int(FsFstat(f.Loop, f.Req, c.Int(file), cb))
+	return int(FsFstat(f.Loop, f.Req, UvFile(file), cb))
 }
 
 // Rename renames a file from the old path to the new path.
@@ -379,22 +381,22 @@ func (f *File) Rename(path string, newPath string, cb FsCb) int {
 
 // Fsync synchronizes a file descriptor's state with storage device.
 func (f *File) Fsync(file int, cb FsCb) int {
-	return int(FsFsync(f.Loop, f.Req, c.Int(file), cb))
+	return int(FsFsync(f.Loop, f.Req, UvFile(file), cb))
 }
 
 // Fdatasync synchronizes a file descriptor's data with storage device.
 func (f *File) Fdatasync(file int, cb FsCb) int {
-	return int(FsFdatasync(f.Loop, f.Req, c.Int(file), cb))
+	return int(FsFdatasync(f.Loop, f.Req, UvFile(file), cb))
 }
 
 // Ftruncate truncates a file to a specified length.
-func (f *File) Ftruncate(file int, offset int, cb FsCb) int {
-	return int(FsFtruncate(f.Loop, f.Req, c.Int(file), c.Int(offset), cb))
+func (f *File) Ftruncate(file int, offset int64, cb FsCb) int {
+	return int(FsFtruncate(f.Loop, f.Req, UvFile(file), c.LongLong(offset), cb))
 }
 
 // Sendfile sends data from one file descriptor to another.
-func (f *File) Sendfile(outFd int, inFd int, inOffset int, length int, cb FsCb) int {
-	return int(FsSendfile(f.Loop, f.Req, c.Int(outFd), c.Int(inFd), c.Int(inOffset), c.Int(length), cb))
+func (f *File) Sendfile(outFd int, inFd int, inOffset int64, length int, cb FsCb) int {
+	return int(FsSendfile(f.Loop, f.Req, c.Int(outFd), c.Int(inFd), c.LongLong(inOffset), c.Int(length), cb))
 }
 
 // Access checks the access permissions of a file specified by the path.
@@ -409,7 +411,7 @@ func (f *File) Chmod(path string, mode int, cb FsCb) int {
 
 // Fchmod changes the permissions of a file descriptor.
 func (f *File) Fchmod(file int, mode int, cb FsCb) int {
-	return int(FsFchmod(f.Loop, f.Req, c.Int(file), c.Int(mode), cb))
+	return int(FsFchmod(f.Loop, f.Req, UvFile(file), c.Int(mode), cb))
 }
 
 // Utime updates the access and modification times of a file specified by the path.
@@ -419,7 +421,7 @@ func (f *File) Utime(path string, atime int, mtime int, cb FsCb) int {
 
 // Futime updates the access and modification times of a file descriptor.
 func (f *File) Futime(file int, atime int, mtime int, cb FsCb) int {
-	return int(FsFutime(f.Loop, f.Req, c.Int(file), c.Int(atime), c.Int(mtime), cb))
+	return int(FsFutime(f.Loop, f.Req, UvFile(file), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Lutime updates the access and modification times of a file specified by the path, even if the path is a symbolic link.
@@ -484,7 +486,7 @@ func (f *File) Chown(path string, uid int, gid int, cb FsCb) int {
 
 // Fchown Change file ownership by file descriptor
 func (f *File) Fchown(file int, uid int, gid int, cb FsCb) int {
-	return int(FsFchown(f.Loop, f.Req, c.Int(file), c.Int(uid), c.Int(gid), cb))
+	return int(FsFchown(f.Loop, f.Req, UvFile(file), c.Int(uid), c.Int(gid), cb))
 }
 
 // Lchown Change file ownership (symlink)
