@@ -9,6 +9,7 @@ import (
 )
 
 const bufferSize = 1024
+
 var buffer []c.Char
 var iov libuv.Buf
 
@@ -55,7 +56,7 @@ func onRead(req *libuv.Fs) {
 		libuv.FsClose(loop, closeReq, req.GetResult(), onClose)
 	} else {
 		if req.GetResult() > intsets.MaxInt {
-			c.Fprintf(c.Stderr, c.Str("Too big file.\n")
+			c.Fprintf(c.Stderr, c.Str("Too big file.\n"))
 		}
 		c.Printf(c.Str("%.*s"), c.Int(req.GetResult()), buffer)
 		libuv.FsRead(loop, req, req.GetResult(), []libuv.Buf{iov}, 1, -1, onRead)
