@@ -57,9 +57,9 @@ const (
 	DirentBlock
 )
 
-type FsType int
+type FsType c.Int
 
-type DirentType int
+type DirentType c.Int
 
 // ----------------------------------------------
 
@@ -108,35 +108,23 @@ type FsPollCb func(handle *FsPoll, status c.Int, events c.Int)
 
 /* Fs related function and method */
 
-// llgo:link (*Fs).GetType C.uv_fs_get_type
-func (f *Fs) GetType() *FsType {
-	return nil
-}
+//go:linkname FsGetType C.uv_fs_get_type
+func FsGetType(req *Fs) *FsType
 
-// llgo:link (*Fs).GetPath C.uv_fs_get_path
-func (f *Fs) GetPath() *c.Char {
-	return nil
-}
+//go:linkname FsGetPath C.uv_fs_get_path
+func FsGetPath(req *Fs) *c.Char
 
-// llgo:link (*Fs).GetResult C.uv_fs_get_result
-func (f *Fs) GetResult() c.Int {
-	return 0
-}
+//go:linkname FsGetResult C.uv_fs_get_result
+func FsGetResult(req *Fs) c.Int
 
-// llgo:link (*Fs).GetPtr C.uv_fs_get_ptr
-func (f *Fs) GetPtr() c.Pointer {
-	return nil
-}
+//go:linkname FsGetPtr C.uv_fs_get_ptr
+func FsGetPtr(req *Fs) c.Pointer
 
-// llgo:link (*Fs).GetSystemError C.uv_fs_get_system_error
-func (f *Fs) GetSystemError() c.Int {
-	return 0
-}
+//go:linkname FsGetSystemError C.uv_fs_get_system_error
+func FsGetSystemError(req *Fs) c.Int
 
-// llgo:link (*Fs).GetStatBuf C.uv_fs_get_statbuf
-func (f *Fs) GetStatBuf() *Stat {
-	return nil
-}
+//go:linkname FsGetStatBuf C.uv_fs_get_statbuf
+func FsGetStatBuf(req *Fs) *Stat
 
 //go:linkname FsReqCleanup C.uv_fs_req_cleanup
 func FsReqCleanup(req *Fs)
@@ -287,6 +275,36 @@ func FsPollGetPath(handle *FsPoll) *c.Char
 
 //TODO: Implemnt uv_poll_init_socket
 
+// GetType Get the type of the file system request.
+func (f *Fs) GetType() *FsType {
+	return FsGetType(f)
+}
+
+// GetPath Get the path of the file system request.
+func (f *Fs) GetPath() string {
+	return c.GoString(FsGetPath(f))
+}
+
+// GetResult Get the result of the file system request.
+func (f *Fs) GetResult() int {
+	return int(FsGetResult(f))
+}
+
+// GetPtr Get the pointer of the file system request.
+func (f *Fs) GetPtr() c.Pointer {
+	return FsGetPtr(f)
+}
+
+// GetSystemError Get the system error of the file system request.
+func (f *Fs) GetSystemError() int {
+	return int(FsGetSystemError(f))
+}
+
+// GetStatBuf Get the stat buffer of the file system request.
+func (f *Fs) GetStatBuf() *Stat {
+	return FsGetStatBuf(f)
+}
+
 // Cleanup cleans up the file system request.
 func (f *File) Cleanup() {
 	FsReqCleanup(f.Req)
@@ -300,203 +318,203 @@ func NewFile(loop *Loop, req *Fs) *File {
 }
 
 // Open opens a file specified by the path with given flags and mode, and returns a file descriptor.
-func (f *File) Open(path *c.Char, flags int, mode int, cb FsCb) int {
-	return FsOpen(f.Loop, f.Req, path, flags, mode, cb)
+func (f *File) Open(path string, flags int, mode int, cb FsCb) int {
+	return int(FsOpen(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), c.Int(mode), cb))
 }
 
 // Close closes a file descriptor.
 func (f *File) Close(file int, cb FsCb) int {
-	return FsClose(f.Loop, f.Req, file, cb)
+	return int(FsClose(f.Loop, f.Req, c.Int(file), cb))
 }
 
 // Read reads data from a file descriptor into a buffer at a specified offset.
 func (f *File) Read(file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) int {
-	return FsRead(f.Loop, f.Req, file, bufs, nbufs, offset, cb)
+	return int(FsRead(f.Loop, f.Req, c.Int(file), bufs, nbufs, c.Int(offset), cb))
 }
 
 // Write writes data to a file descriptor from a buffer at a specified offset.
 func (f *File) Write(file c.Int, bufs []Buf, nbufs c.Uint, offset c.Int, cb FsCb) int {
-	return FsWrite(f.Loop, f.Req, file, bufs, nbufs, offset, cb)
+	return int(FsWrite(f.Loop, f.Req, file, bufs, nbufs, offset, cb))
 }
 
 // Unlink deletes a file specified by the path.
-func (f *File) Unlink(path *c.Char, cb FsCb) int {
-	return FsUnlink(f.Loop, f.Req, path, cb)
+func (f *File) Unlink(path string, cb FsCb) int {
+	return int(FsUnlink(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Mkdir creates a new directory at the specified path with a specified mode.
-func (f *File) Mkdir(path *c.Char, mode int, cb FsCb) int {
-	return FsMkdir(f.Loop, f.Req, path, mode, cb)
+func (f *File) Mkdir(path string, mode int, cb FsCb) int {
+	return int(FsMkdir(f.Loop, f.Req, c.AllocaCStr(path), c.Int(mode), cb))
 }
 
 // Mkdtemp creates a temporary directory with a template path.
-func (f *File) Mkdtemp(tpl *c.Char, cb FsCb) int {
-	return FsMkdtemp(f.Loop, f.Req, tpl, cb)
+func (f *File) Mkdtemp(tpl string, cb FsCb) int {
+	return int(FsMkdtemp(f.Loop, f.Req, c.AllocaCStr(tpl), cb))
 }
 
 // MkStemp creates a temporary file from a template path.
-func (f *File) MkStemp(tpl *c.Char, cb FsCb) int {
-	return FsMkStemp(f.Loop, f.Req, tpl, cb)
+func (f *File) MkStemp(tpl string, cb FsCb) int {
+	return int(FsMkStemp(f.Loop, f.Req, c.AllocaCStr(tpl), cb))
 }
 
 // Rmdir removes a directory specified by the path.
-func (f *File) Rmdir(path *c.Char, cb FsCb) int {
-	return FsRmdir(f.Loop, f.Req, path, cb)
+func (f *File) Rmdir(path string, cb FsCb) int {
+	return int(FsRmdir(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Stat retrieves status information about the file specified by the path.
-func (f *File) Stat(path *c.Char, cb FsCb) int {
-	return FsStat(f.Loop, f.Req, path, cb)
+func (f *File) Stat(path string, cb FsCb) int {
+	return int(FsStat(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Fstat retrieves status information about a file descriptor.
 func (f *File) Fstat(file int, cb FsCb) int {
-	return FsFstat(f.Loop, f.Req, file, cb)
+	return int(FsFstat(f.Loop, f.Req, c.Int(file), cb))
 }
 
 // Rename renames a file from the old path to the new path.
-func (f *File) Rename(path *c.Char, newPath *c.Char, cb FsCb) int {
-	return FsRename(f.Loop, f.Req, path, newPath, cb)
+func (f *File) Rename(path string, newPath string, cb FsCb) int {
+	return int(FsRename(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
 }
 
 // Fsync synchronizes a file descriptor's state with storage device.
 func (f *File) Fsync(file int, cb FsCb) int {
-	return FsFsync(f.Loop, f.Req, file, cb)
+	return int(FsFsync(f.Loop, f.Req, c.Int(file), cb))
 }
 
 // Fdatasync synchronizes a file descriptor's data with storage device.
 func (f *File) Fdatasync(file int, cb FsCb) int {
-	return FsFdatasync(f.Loop, f.Req, file, cb)
+	return int(FsFdatasync(f.Loop, f.Req, c.Int(file), cb))
 }
 
 // Ftruncate truncates a file to a specified length.
 func (f *File) Ftruncate(file int, offset int, cb FsCb) int {
-	return FsFtruncate(f.Loop, f.Req, file, offset, cb)
+	return int(FsFtruncate(f.Loop, f.Req, c.Int(file), c.Int(offset), cb))
 }
 
 // Sendfile sends data from one file descriptor to another.
 func (f *File) Sendfile(outFd int, inFd int, inOffset int, length int, cb FsCb) int {
-	return FsSendfile(f.Loop, f.Req, outFd, inFd, inOffset, length, cb)
+	return int(FsSendfile(f.Loop, f.Req, c.Int(outFd), c.Int(inFd), c.Int(inOffset), c.Int(length), cb))
 }
 
 // Access checks the access permissions of a file specified by the path.
-func (f *File) Access(path *c.Char, flags int, cb FsCb) int {
-	return FsAccess(f.Loop, f.Req, path, flags, cb)
+func (f *File) Access(path string, flags int, cb FsCb) int {
+	return int(FsAccess(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), cb))
 }
 
 // Chmod changes the permissions of a file specified by the path.
-func (f *File) Chmod(path *c.Char, mode int, cb FsCb) int {
-	return FsChmod(f.Loop, f.Req, path, mode, cb)
+func (f *File) Chmod(path string, mode int, cb FsCb) int {
+	return int(FsChmod(f.Loop, f.Req, c.AllocaCStr(path), c.Int(mode), cb))
 }
 
 // Fchmod changes the permissions of a file descriptor.
 func (f *File) Fchmod(file int, mode int, cb FsCb) int {
-	return FsFchmod(f.Loop, f.Req, file, mode, cb)
+	return int(FsFchmod(f.Loop, f.Req, c.Int(file), c.Int(mode), cb))
 }
 
 // Utime updates the access and modification times of a file specified by the path.
-func (f *File) Utime(path *c.Char, atime int, mtime int, cb FsCb) int {
-	return FsUtime(f.Loop, f.Req, path, atime, mtime, cb)
+func (f *File) Utime(path string, atime int, mtime int, cb FsCb) int {
+	return int(FsUtime(f.Loop, f.Req, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Futime updates the access and modification times of a file descriptor.
 func (f *File) Futime(file int, atime int, mtime int, cb FsCb) int {
-	return FsFutime(f.Loop, f.Req, file, atime, mtime, cb)
+	return int(FsFutime(f.Loop, f.Req, c.Int(file), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Lutime updates the access and modification times of a file specified by the path, even if the path is a symbolic link.
-func (f *File) Lutime(path *c.Char, atime int, mtime int, cb FsCb) int {
-	return FsLutime(f.Loop, f.Req, path, atime, mtime, cb)
+func (f *File) Lutime(path string, atime int, mtime int, cb FsCb) int {
+	return int(FsLutime(f.Loop, f.Req, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Link creates a new link to an existing file.
-func (f *File) Link(path *c.Char, newPath *c.Char, cb FsCb) int {
-	return FsLink(f.Loop, f.Req, path, newPath, cb)
+func (f *File) Link(path string, newPath string, cb FsCb) int {
+	return int(FsLink(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
 }
 
 // Symlink creates a symbolic link from the path to the new path.
-func (f *File) Symlink(path *c.Char, newPath *c.Char, flags int, cb FsCb) int {
-	return FsSymlink(f.Loop, f.Req, path, newPath, flags, cb)
+func (f *File) Symlink(path string, newPath string, flags int, cb FsCb) int {
+	return int(FsSymlink(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
 }
 
 // Readlink reads the target of a symbolic link.
-func (f *File) Readlink(path *c.Char, cb FsCb) int {
-	return FsReadlink(f.Loop, f.Req, path, cb)
+func (f *File) Readlink(path string, cb FsCb) int {
+	return int(FsReadlink(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Realpath resolves the absolute path of a file.
-func (f *File) Realpath(path *c.Char, cb FsCb) int {
-	return FsRealpath(f.Loop, f.Req, path, cb)
+func (f *File) Realpath(path string, cb FsCb) int {
+	return int(FsRealpath(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Copyfile copies a file from the source path to the destination path.
-func (f *File) Copyfile(path *c.Char, newPath *c.Char, flags int, cb FsCb) int {
-	return FsCopyfile(f.Loop, f.Req, path, newPath, flags, cb)
+func (f *File) Copyfile(path string, newPath string, flags int, cb FsCb) int {
+	return int(FsCopyfile(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
 }
 
 // Scandir scans a directory for entries.
-func (f *File) Scandir(path *c.Char, flags int, cb FsCb) int {
-	return FsScandir(f.Loop, f.Req, path, flags, cb)
+func (f *File) Scandir(path string, flags int, cb FsCb) int {
+	return int(FsScandir(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), cb))
 }
 
 // OpenDir opens a directory specified by the path.
-func (f *File) OpenDir(path *c.Char, cb FsCb) int {
-	return FsOpenDir(f.Loop, f.Req, path, cb)
+func (f *File) OpenDir(path string, cb FsCb) int {
+	return int(FsOpenDir(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Readdir reads entries from an open directory.
 func (f *File) Readdir(dir int, cb FsCb) int {
-	return FsReaddir(f.Loop, f.Req, dir, cb)
+	return int(FsReaddir(f.Loop, f.Req, c.Int(dir), cb))
 }
 
 // CloseDir closes an open directory.
 func (f *File) CloseDir() int {
-	return FsCloseDir(f.Loop, f.Req)
+	return int(FsCloseDir(f.Loop, f.Req))
 }
 
 // Statfs retrieves file system status information.
-func (f *File) Statfs(path *c.Char, cb FsCb) int {
-	return FsStatfs(f.Loop, f.Req, path, cb)
+func (f *File) Statfs(path string, cb FsCb) int {
+	return int(FsStatfs(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Chown Change file ownership
-func (f *File) Chown(path *c.Char, uid int, gid int, cb FsCb) int {
-	return FsChown(f.Loop, f.Req, path, uid, gid, cb)
+func (f *File) Chown(path string, uid int, gid int, cb FsCb) int {
+	return int(FsChown(f.Loop, f.Req, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
 }
 
 // Fchown Change file ownership by file descriptor
 func (f *File) Fchown(file int, uid int, gid int, cb FsCb) int {
-	return FsFchown(f.Loop, f.Req, file, uid, gid, cb)
+	return int(FsFchown(f.Loop, f.Req, c.Int(file), c.Int(uid), c.Int(gid), cb))
 }
 
 // Lchown Change file ownership (symlink)
-func (f *File) Lchown(path *c.Char, uid int, gid int, cb FsCb) int {
-	return FsLchown(f.Loop, f.Req, path, uid, gid, cb)
+func (f *File) Lchown(path string, uid int, gid int, cb FsCb) int {
+	return int(FsLchown(f.Loop, f.Req, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
 }
 
 // Lstat Get file status (symlink)
-func (f *File) Lstat(path *c.Char, cb FsCb) int {
-	return FsLstat(f.Loop, f.Req, path, cb)
+func (f *File) Lstat(path string, cb FsCb) int {
+	return int(FsLstat(f.Loop, f.Req, c.AllocaCStr(path), cb))
 }
 
 // Init Initialize a file event handle
 func (e *FsEvent) Init(loop *Loop) int {
-	return FsEventInit(loop, e)
+	return int(FsEventInit(loop, e))
 }
 
 // Start listening for file events
-func (e *FsEvent) Start(cb FsEventCb, path *c.Char, flags int) int {
-	return FsEventStart(e, cb, path, flags)
+func (e *FsEvent) Start(cb FsEventCb, path string, flags int) int {
+	return int(FsEventStart(e, cb, c.AllocaCStr(path), c.Int(flags)))
 }
 
 // Stop listening for file events
 func (e *FsEvent) Stop() int {
-	return FsEventStop(e)
+	return int(FsEventStop(e))
 }
 
 // Close the file event handle
 func (e *FsEvent) Close() int {
-	return FsEventClose(e)
+	return int(FsEventClose(e))
 }
 
 // GetPath Get the path of the file event
@@ -506,25 +524,25 @@ func (e *FsEvent) GetPath() *c.Char {
 
 // Init Initialize a file poll handle
 func (p *FsPoll) Init(loop *Loop) int {
-	return FsPollInit(loop, p)
+	return int(FsPollInit(loop, p))
 }
 
 // Start polling for file changes
-func (p *FsPoll) Start(cb FsPollCb, path *c.Char, interval uint) int {
-	return FsPollStart(p, cb, path, interval)
+func (p *FsPoll) Start(cb FsPollCb, path string, interval uint) int {
+	return int(FsPollStart(p, cb, c.AllocaCStr(path), interval))
 }
 
 // Stop polling for file changes
 func (p *FsPoll) Stop() int {
-	return FsPollStop(p)
+	return int(FsPollStop(p))
 }
 
 // Close the file poll handle
 func (p *FsPoll) Close() int {
-	return FsPollClose(p)
+	return int(FsPollClose(p))
 }
 
 // GetPath Get the path of the file poll
-func (p *FsPoll) GetPath() *c.Char {
-	return FsPollGetPath(p)
+func (p *FsPoll) GetPath() string {
+	return c.GoString(FsPollGetPath(p))
 }

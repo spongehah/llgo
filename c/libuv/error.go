@@ -109,3 +109,15 @@ func ErrName(err c.Int) *c.Char
 
 //go:linkname ErrNameR C.uv_err_name_r
 func ErrNameR(err c.Int, buf *c.Char, bufLen uintptr) *c.Char
+
+func (e Errno) Error() string {
+	return c.GoString(Strerror(c.Int(e)))
+}
+
+func (e Errno) Name() string {
+	return c.GoString(ErrName(c.Int(e)))
+}
+
+func (e Errno) TranslateSysError() c.Int {
+	return TranslateSysError(c.Int(e))
+}
