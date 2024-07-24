@@ -118,8 +118,8 @@ func (e Errno) Name() string {
 	return c.GoString(UvErrName(c.Int(e)))
 }
 
-func (e Errno) TranslateSysError() c.Int {
-	return UvTranslateSysError(c.Int(e))
+func (e Errno) TranslateSysError() int {
+	return int(UvTranslateSysError(c.Int(e)))
 }
 
 func Strerror(err int) string {
