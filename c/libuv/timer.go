@@ -52,3 +52,38 @@ func (timer *Timer) GetRepeat() uint64 {
 func (timer *Timer) GetDueIn() uint64 {
 	return 0
 }
+
+// UvInitTimer initializes the timer.
+func UvInitTimer(loop *Loop, timer *Timer) int {
+	return int(InitTimer(loop, timer))
+}
+
+// UvStart starts the timer.
+func (timer *Timer) UvStart(cb TimerCb, timeout uint64, repeat uint64) int {
+	return int(timer.Start(cb, timeout, repeat))
+}
+
+// UvStop stops the timer.
+func (timer *Timer) UvStop() int {
+	return int(timer.Stop())
+}
+
+// UvAgain restarts the timer.
+func (timer *Timer) UvAgain() int {
+	return int(timer.Again())
+}
+
+// UvSetRepeat sets the repeat value of the timer.
+func (timer *Timer) UvSetRepeat(repeat uint64) {
+	timer.SetRepeat(repeat)
+}
+
+// UvGetRepeat gets the repeat value of the timer.
+func (timer *Timer) UvGetRepeat() uint64 {
+	return timer.GetRepeat()
+}
+
+// UvGetDueIn gets the due in value of the timer.
+func (timer *Timer) UvGetDueIn() uint64 {
+	return timer.GetDueIn()
+}

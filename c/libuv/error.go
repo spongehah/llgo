@@ -122,6 +122,6 @@ func (e Errno) TranslateSysError() int {
 	return int(UvTranslateSysError(c.Int(e)))
 }
 
-func Strerror(err int) string {
+func Strerror(err c.Int) string {
 	return c.GoString(UvStrerror(c.Int(err)))
 }

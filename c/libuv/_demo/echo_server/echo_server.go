@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/goplus/llgo/c"
 	"github.com/goplus/llgo/c/libuv"
 	"github.com/goplus/llgo/c/net"
@@ -13,13 +14,13 @@ var DEFAULT_BACKLOG c.Int = 128
 var loop *libuv.Loop
 
 type WriteReq struct {
-	req libuv.Write
-	buf libuv.Buf
+	Req libuv.Write
+	Buf libuv.Buf
 }
 
 func FreeWriteReq(req *libuv.Write) {
 	wr := (*WriteReq)(c.Pointer(req))
-	c.Free(c.Pointer(wr.buf.Base))
+	c.Free(c.Pointer(wr.Buf.Base))
 	c.Free(c.Pointer(wr))
 }
 
@@ -30,9 +31,9 @@ func AllocBuffer(handle *libuv.Handle, suggestedSize uintptr, buf *libuv.Buf) {
 
 func EchoWrite(req *libuv.Write, status c.Int) {
 	if status != 0 {
-		c.Fprintf(c.Stderr, c.Str("write error: %s\n"), libuv.Strerror(status))
+		fmt.Printf("write error: %s\n", libuv.Strerror(status))
 	}
-	defer FreeWriteReq(req)
+	FreeWriteReq(req)
 }
 
 func EchoRead(client *libuv.Stream, nread c.Long, buf *libuv.Buf) {
@@ -40,18 +41,18 @@ func EchoRead(client *libuv.Stream, nread c.Long, buf *libuv.Buf) {
 		req := (*WriteReq)(c.Malloc(unsafe.Sizeof(WriteReq{})))
 		if req == nil {
 			c.Fprintf(c.Stderr, c.Str("Failed to allocate memory for write request\n"))
-			defer c.Free(c.Pointer(buf.Base))
+			c.Free(c.Pointer(buf.Base))
 			return
 		}
-		req.buf = libuv.InitBuf(buf.Base, c.Uint(nread))
-		(*libuv.Write)(c.Pointer(req)).Write(client, []libuv.Buf{req.buf}, 1, EchoWrite)
+		req.Buf = libuv.UvInitBuf(buf.Base, c.Uint(nread))
+		(&req.Req).Write(client, &req.Buf, 1, EchoWrite)
 		return
 	}
 	if nread < 0 {
 		if (libuv.Errno)(nread) != libuv.EOF {
-			c.Fprintf(c.Stderr, c.Str("Read error: %s\n"), libuv.Strerror(c.Int(nread)))
+			fmt.Printf("Read error: %s\n", libuv.Strerror(c.Int(nread)))
 		}
-		(*libuv.Handle)(client).Close(nil)
+		(*libuv.Handle)(c.Pointer(client)).Close(nil)
 	}
 	if buf.Base != nil {
 		c.Free(c.Pointer(buf.Base))
@@ -60,7 +61,7 @@ func EchoRead(client *libuv.Stream, nread c.Long, buf *libuv.Buf) {
 
 func OnNewConnection(server *libuv.Stream, status c.Int) {
 	if status < 0 {
-		c.Fprintf(c.Stderr, c.Str("New connection error: %s\n"), libuv.Strerror(status))
+		fmt.Printf("New connection error: %s\n", libuv.Strerror(status))
 		return
 	}
 
@@ -80,7 +81,7 @@ func OnNewConnection(server *libuv.Stream, status c.Int) {
 	if server.Accept((*libuv.Stream)(client)) == 0 {
 		(*libuv.Stream)(client).StartRead(AllocBuffer, EchoRead)
 	} else {
-		(*libuv.Handle)(client).Close(nil)
+		(*libuv.Handle)(c.Pointer(client)).Close(nil)
 	}
 }
 
@@ -100,7 +101,7 @@ func main() {
 	(&server).Bind((*net.SockAddr)(c.Pointer(&addr)), 0)
 	res := (*libuv.Stream)(&server).Listen(DEFAULT_BACKLOG, OnNewConnection)
 	if res != 0 {
-		c.Fprintf(c.Stderr, c.Str("Listen error: %s\n"), libuv.Strerror(res))
+		fmt.Printf("Listen error: %s\n", libuv.Strerror(res))
 		return
 	}
 

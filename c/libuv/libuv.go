@@ -98,7 +98,7 @@ type Loop struct {
 }
 
 type Handle struct {
-	Unused [0]byte
+	Unused [96]byte
 }
 
 type Dir struct {
@@ -106,7 +106,7 @@ type Dir struct {
 }
 
 type Stream struct {
-	Unused [0]byte
+	Unused [264]byte
 }
 
 type Pipe struct {
@@ -160,7 +160,7 @@ type Shutdown struct {
 }
 
 type Write struct {
-	Unused [0]byte
+	Unused [192]byte
 }
 
 type Connect struct {
@@ -331,6 +331,91 @@ func (handle *Handle) IsClosing() c.Int {
 	return 0
 }
 
+// UvRef increases the reference count of the handle.
+func (handle *Handle) UvRef() {
+	handle.Ref()
+}
+
+// UvUnRef decreases the reference count of the handle.
+func (handle *Handle) UvUnRef() {
+	handle.Unref()
+}
+
+// UvHasRef returns the reference count of the handle.
+func (handle *Handle) UvHasRef() int {
+	return int(handle.HasRef())
+}
+
+// UvHandleSize returns the size of the handle.
+func UvHandleSize(handleType HandleType) uintptr {
+	return HandleSize(handleType)
+}
+
+// UvGetType returns the type of the handle.
+func (handle *Handle) UvGetType() HandleType {
+	return handle.GetType()
+}
+
+// UvHandleTypeName returns the name of the handle type.
+func UvHandleTypeName(handleType HandleType) string {
+	return c.GoString(HandleTypeName(handleType))
+}
+
+// UvGetData returns the data of the handle.
+func (handle *Handle) UvGetData() c.Pointer {
+	return handle.GetData()
+}
+
+// UvGetLoop returns the loop of the handle.
+func (handle *Handle) UvGetLoop() *Loop {
+	return handle.GetLoop()
+}
+
+// UvSetData sets the data of the handle.
+func (handle *Handle) UvSetData(data c.Pointer) {
+	handle.SetData(data)
+}
+
+// UvIsActive returns the status of the handle.
+func (handle *Handle) UvIsActive() int {
+	return int(handle.IsActive())
+}
+
+// UvClose closes the handle.
+func (handle *Handle) UvClose(closeCb CloseCb) {
+	handle.Close(closeCb)
+}
+
+// UvSendBufferSize sets the send buffer size of the handle.
+func (handle *Handle) UvSendBufferSize(value *c.Int) int {
+	return int(handle.SendBufferSize(value))
+}
+
+// UvRecvBufferSize sets the receive buffer size of the handle.
+func (handle *Handle) UvRecvBufferSize(value *c.Int) int {
+	return int(handle.RecvBufferSize(value))
+}
+
+// UvFileno returns the file descriptor of the handle.
+func (handle *Handle) UvFileno(fd *OsFd) int {
+	return int(handle.Fileno(fd))
+}
+
+// UvUvPipe creates a pipe.
+func UvUvPipe(fds [2]UvFile, readFlags int, writeFlags int) int {
+	return int(UvPipe(fds, c.Int(readFlags), c.Int(writeFlags)))
+}
+
+// UvSocketpair creates a socket pair.
+func UvSocketpair(_type int, protocol int, socketVector [2]OsSock, flag0 int, flag1 int) int {
+	return int(Socketpair(c.Int(_type), c.Int(protocol), socketVector, c.Int(flag0), c.Int(flag1)))
+}
+
+// UvIsClosing returns the status of the handle.
+func (handle *Handle) UvIsClosing() int {
+	return int(handle.IsClosing())
+}
+
 // ----------------------------------------------
 
 /* Req related function and method */
@@ -353,6 +438,31 @@ func (req *Req) GetType() ReqType {
 
 //go:linkname TypeName C.uv_req_type_name
 func TypeName(reqType ReqType) *c.Char
+
+// UvReqSize returns the size of the request.
+func UvReqSize(reqType ReqType) uintptr {
+	return ReqSize(reqType)
+}
+
+// UvGetData returns the data of the request.
+func (req *Req) UvGetData() c.Pointer {
+	return req.GetData()
+}
+
+// UvSetData sets the data of the request.
+func (req *Req) UvSetData(data c.Pointer) {
+	req.SetData(data)
+}
+
+// UvGetType returns the type of the request.
+func (req *Req) UvGetType() ReqType {
+	return req.GetType()
+}
+
+// UvTypeName returns the name of the request type.
+func UvTypeName(reqType ReqType) string {
+	return c.GoString(TypeName(reqType))
+}
 
 // ----------------------------------------------
 
@@ -384,22 +494,22 @@ func (stream *Stream) StopRead() c.Int {
 }
 
 // llgo:link (*Write).Write C.uv_write
-func (req *Write) Write(stream *Stream, bufs []Buf, nbufs c.Uint, writeCb WriteCb) c.Int {
+func (req *Write) Write(stream *Stream, bufs *Buf, nbufs c.Uint, writeCb WriteCb) c.Int {
 	return 0
 }
 
 // llgo:link (*Write).Write2 C.uv_write2
-func (req *Write) Write2(stream *Stream, bufs []Buf, nbufs c.Uint, sendStream *Stream, writeCb WriteCb) c.Int {
+func (req *Write) Write2(stream *Stream, bufs *Buf, nbufs c.Uint, sendStream *Stream, writeCb WriteCb) c.Int {
 	return 0
 }
 
 // llgo:link (*Stream).TryWrite C.uv_try_write
-func (stream *Stream) TryWrite(bufs []Buf, nbufs c.Uint) c.Int {
+func (stream *Stream) TryWrite(bufs *Buf, nbufs c.Uint) c.Int {
 	return 0
 }
 
 // llgo:link (*Stream).TryWrite2 C.uv_try_write2
-func (stream *Stream) TryWrite2(bufs []Buf, nbufs c.Uint, sendStream *Stream) c.Int {
+func (stream *Stream) TryWrite2(bufs *Buf, nbufs c.Uint, sendStream *Stream) c.Int {
 	return 0
 }
 
@@ -416,6 +526,66 @@ func (stream *Stream) IsWritable() c.Int {
 // llgo:link (*Stream).SetBlocking C.uv_stream_set_blocking
 func (stream *Stream) SetBlocking(blocking c.Int) c.Int {
 	return 0
+}
+
+// UvGetWriteQueueSize returns the size of the write queue of the stream.
+func (stream *Stream) UvGetWriteQueueSize() uintptr {
+	return stream.GetWriteQueueSize()
+}
+
+// UvListen listens on the stream.
+func (stream *Stream) UvListen(backlog int, connectionCb ConnectionCb) int {
+	return int(stream.Listen(c.Int(backlog), connectionCb))
+}
+
+// UvAccept accepts a connection on the stream.
+func (server *Stream) UvAccept(client *Stream) int {
+	return int(server.Accept(client))
+}
+
+// UvStartRead starts reading from the stream.
+func (stream *Stream) UvStartRead(allocCb AllocCb, readCb ReadCb) int {
+	return int(stream.StartRead(allocCb, readCb))
+}
+
+// UvStopRead stops reading from the stream.
+func (stream *Stream) UvStopRead() int {
+	return int(stream.StopRead())
+}
+
+// UvWrite writes to the stream.
+func (req *Write) UvWrite(stream *Stream, bufs *Buf, nbufs uint, writeCb WriteCb) int {
+	return int(req.Write(stream, bufs, c.Uint(nbufs), writeCb))
+}
+
+// UvWrite2 writes to the stream.
+func (req *Write) UvWrite2(stream *Stream, bufs *Buf, nbufs uint, sendStream *Stream, writeCb WriteCb) int {
+	return int(req.Write2(stream, bufs, c.Uint(nbufs), sendStream, writeCb))
+}
+
+// UvTryWrite writes to the stream.
+func (stream *Stream) UvTryWrite(bufs *Buf, nbufs uint) int {
+	return int(stream.TryWrite(bufs, c.Uint(nbufs)))
+}
+
+// UvTryWrite2 writes to the stream.
+func (stream *Stream) UvTryWrite2(bufs *Buf, nbufs uint, sendStream *Stream) int {
+	return int(stream.TryWrite2(bufs, c.Uint(nbufs), sendStream))
+}
+
+// UvIsReadable returns the status of the stream.
+func (stream *Stream) UvIsReadable() int {
+	return int(stream.IsReadable())
+}
+
+// UvIsWritable returns the status of the stream.
+func (stream *Stream) UvIsWritable() int {
+	return int(stream.IsWritable())
+}
+
+// UvSetBlocking sets the blocking status of the stream.
+func (stream *Stream) UvSetBlocking(blocking int) int {
+	return int(stream.SetBlocking(c.Int(blocking)))
 }
 
 // ----------------------------------------------
@@ -603,9 +773,24 @@ func Getaddrinfo(loop *Loop, req *GetAddrInfo, getaddrinfoCb GetaddrinfoCb, node
 //go:linkname Freeaddrinfo C.uv_freeaddrinfo
 func Freeaddrinfo(addrInfo *net.AddrInfo)
 
+// UvGetaddrinfo gets the address information.
+func UvGetaddrinfo(loop *Loop, req *GetAddrInfo, getaddrinfoCb GetaddrinfoCb, node string, service string, hints *net.AddrInfo) int {
+	return int(Getaddrinfo(loop, req, getaddrinfoCb, c.AllocaCStr(node), c.AllocaCStr(service), hints))
+}
+
+// UvFreeaddrinfo frees the address information.
+func UvFreeaddrinfo(addrInfo *net.AddrInfo) {
+	Freeaddrinfo(addrInfo)
+}
+
 // ----------------------------------------------
 
 /* Getnameinfo related function and method */
 
 //go:linkname Getnameinfo C.uv_getnameinfo
 func Getnameinfo(loop *Loop, req *GetNameInfo, getnameinfoCb GetnameinfoCb, addr *net.SockAddr, flags c.Int) c.Int
+
+// UvGetnameinfo gets the name information.
+func UvGetnameinfo(loop *Loop, req *GetNameInfo, getnameinfoCb GetnameinfoCb, addr *net.SockAddr, flags int) int {
+	return int(Getnameinfo(loop, req, getnameinfoCb, addr, c.Int(flags)))
+}
