@@ -83,8 +83,6 @@ type HandleType c.Int
 
 type ReqType c.Int
 
-type Uv_File c.Int
-
 type OsSock c.Int
 
 type OsFd c.Int
@@ -319,7 +317,7 @@ func (handle *Handle) Fileno(fd *OsFd) c.Int {
 }
 
 //go:linkname UvPipe C.uv_pipe
-func UvPipe(fds [2]Uv_File, readFlags c.Int, writeFlags c.Int) c.Int {
+func UvPipe(fds [2]UvFile, readFlags c.Int, writeFlags c.Int) c.Int {
 	return 0
 }
 
@@ -469,71 +467,88 @@ func UvLoopBackendTimeout(loop *Loop) c.Int
 //go:linkname UvLoopWalk C.uv_walk
 func UvLoopWalk(loop *Loop, walkCb WalkCb, arg c.Pointer)
 
+// DefaultLoop returns the default loop.
 func (l *Loop) DefaultLoop() *Loop {
 	return UvLoopDefault()
 }
 
+// Size returns the size of the loop.
 func (l *Loop) Size() uintptr {
 	return UvLoopSize()
 }
 
+// Init initializes the loop.
 func (l *Loop) Init() int {
 	return int(UvLoopInit(l))
 }
 
+// Run runs the loop.
 func (l *Loop) Run(mode RunMode) int {
 	return int(UvRun(l, mode))
 }
 
+// Stop closes the loop.
 func (l *Loop) Stop() int {
 	return int(UvLoopClose(l))
 }
 
+// Default creates a new loop.
 func (l *Loop) Default() *Loop {
 	return UvLoopDefault()
 }
 
+// New creates a new loop.
 func (l *Loop) New() *Loop {
 	return UvLoopNew()
 }
 
 // Deprecated: use LoopClose instead.
+// Delete closes the loop.
 func (l *Loop) Delete() int {
 	return int(UvLoopDelete(l))
 }
 
+// Alive returns the status of the loop.
 func (l *Loop) Alive() int {
 	return int(UvLoopAlive(l))
 }
 
+// Close closes the loop.
 func (l *Loop) Close() int {
 	return int(UvLoopClose(l))
 }
 
+// Configure configures the loop.
 func (l *Loop) Configure(loop *Loop, option int, arg int) int {
 	return int(UvLoopConfigure(l, LoopOption(c.Int(option)), c.Int(arg)))
 }
 
+// Walk walks the loop.
 func (l *Loop) Walk(walkCb WalkCb, arg c.Pointer) {
 	UvLoopWalk(l, walkCb, arg)
 }
 
+// Fork forks the loop.
 func (l *Loop) Fork(loop *Loop) int {
 	return int(UvLoopFork(l))
 }
 
+// UpdateTime updates the time of the loop.
 func (l *Loop) UpdateTime() {
 	UvLoopUpdateTime(l)
 }
 
+// Now returns the current time of the loop.
 func (l *Loop) Now() uint64 {
 	return uint64(UvLoopNow(l))
 }
 
+// BackendFd returns the backend file descriptor of the loop.
 func (l *Loop) BackendFd() int {
 	return int(UvLoopBackendFd(l))
 }
 
+// BackendTimeout returns the backend timeout of the loop.
 func (l *Loop) BackendTimeout() int {
 	return int(UvLoopBackendTimeout(l))
 }
