@@ -308,8 +308,8 @@ func (f *Fs) GetStatBuf() *Stat {
 }
 
 // Cleanup cleans up the file system request.
-func (f *File) Cleanup() {
-	FsReqCleanup(f.Req)
+func (f *Fs) Cleanup() {
+	FsReqCleanup(f)
 }
 
 func NewFile(loop *Loop, req *Fs) *File {
@@ -320,183 +320,183 @@ func NewFile(loop *Loop, req *Fs) *File {
 }
 
 // Open opens a file specified by the path with given flags and mode, and returns a file descriptor.
-func (f *File) Open(path string, flags int, mode int, cb FsCb) int {
-	return int(FsOpen(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), c.Int(mode), cb))
+func (f *Fs) Open(loop *Loop, path string, flags int, mode int, cb FsCb) int {
+	return int(FsOpen(loop, f, c.AllocaCStr(path), c.Int(flags), c.Int(mode), cb))
 }
 
 // Close closes a file descriptor.
-func (f *File) Close(file int, cb FsCb) int {
-	return int(FsClose(f.Loop, f.Req, UvFile(file), cb))
+func (f *Fs) Close(loop *Loop, file int, cb FsCb) int {
+	return int(FsClose(loop, f, UvFile(file), cb))
 }
 
 // Read reads data from a file descriptor into a buffer at a specified offset.
-func (f *File) Read(file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
-	return int(FsRead(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
+func (f *Fs) Read(loop *Loop, file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+	return int(FsRead(loop, f, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
 // Write writes data to a file descriptor from a buffer at a specified offset.
-func (f *File) Write(file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
-	return int(FsWrite(f.Loop, f.Req, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
+func (f *Fs) Write(loop *Loop, file int, bufs *Buf, nbufs c.Uint, offset int64, cb FsCb) int {
+	return int(FsWrite(loop, f, UvFile(file), bufs, nbufs, c.LongLong(offset), cb))
 }
 
 // Unlink deletes a file specified by the path.
-func (f *File) Unlink(path string, cb FsCb) int {
-	return int(FsUnlink(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Unlink(loop *Loop, path string, cb FsCb) int {
+	return int(FsUnlink(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Mkdir creates a new directory at the specified path with a specified mode.
-func (f *File) Mkdir(path string, mode int, cb FsCb) int {
-	return int(FsMkdir(f.Loop, f.Req, c.AllocaCStr(path), c.Int(mode), cb))
+func (f *Fs) Mkdir(loop *Loop, path string, mode int, cb FsCb) int {
+	return int(FsMkdir(loop, f, c.AllocaCStr(path), c.Int(mode), cb))
 }
 
 // Mkdtemp creates a temporary directory with a template path.
-func (f *File) Mkdtemp(tpl string, cb FsCb) int {
-	return int(FsMkdtemp(f.Loop, f.Req, c.AllocaCStr(tpl), cb))
+func (f *Fs) Mkdtemp(loop *Loop, tpl string, cb FsCb) int {
+	return int(FsMkdtemp(loop, f, c.AllocaCStr(tpl), cb))
 }
 
 // MkStemp creates a temporary file from a template path.
-func (f *File) MkStemp(tpl string, cb FsCb) int {
-	return int(FsMkStemp(f.Loop, f.Req, c.AllocaCStr(tpl), cb))
+func (f *Fs) MkStemp(loop *Loop, tpl string, cb FsCb) int {
+	return int(FsMkStemp(loop, f, c.AllocaCStr(tpl), cb))
 }
 
 // Rmdir removes a directory specified by the path.
-func (f *File) Rmdir(path string, cb FsCb) int {
-	return int(FsRmdir(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Rmdir(loop *Loop, path string, cb FsCb) int {
+	return int(FsRmdir(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Stat retrieves status information about the file specified by the path.
-func (f *File) Stat(path string, cb FsCb) int {
-	return int(FsStat(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Stat(loop *Loop, path string, cb FsCb) int {
+	return int(FsStat(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Fstat retrieves status information about a file descriptor.
-func (f *File) Fstat(file int, cb FsCb) int {
-	return int(FsFstat(f.Loop, f.Req, UvFile(file), cb))
+func (f *Fs) Fstat(loop *Loop, file int, cb FsCb) int {
+	return int(FsFstat(loop, f, UvFile(file), cb))
 }
 
 // Rename renames a file from the old path to the new path.
-func (f *File) Rename(path string, newPath string, cb FsCb) int {
-	return int(FsRename(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
+func (f *Fs) Rename(loop *Loop, path string, newPath string, cb FsCb) int {
+	return int(FsRename(loop, f, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
 }
 
 // Fsync synchronizes a file descriptor's state with storage device.
-func (f *File) Fsync(file int, cb FsCb) int {
-	return int(FsFsync(f.Loop, f.Req, UvFile(file), cb))
+func (f *Fs) Fsync(loop *Loop, file int, cb FsCb) int {
+	return int(FsFsync(loop, f, UvFile(file), cb))
 }
 
 // Fdatasync synchronizes a file descriptor's data with storage device.
-func (f *File) Fdatasync(file int, cb FsCb) int {
-	return int(FsFdatasync(f.Loop, f.Req, UvFile(file), cb))
+func (f *Fs) Fdatasync(loop *Loop, file int, cb FsCb) int {
+	return int(FsFdatasync(loop, f, UvFile(file), cb))
 }
 
 // Ftruncate truncates a file to a specified length.
-func (f *File) Ftruncate(file int, offset int64, cb FsCb) int {
-	return int(FsFtruncate(f.Loop, f.Req, UvFile(file), c.LongLong(offset), cb))
+func (f *Fs) Ftruncate(loop *Loop, file int, offset int64, cb FsCb) int {
+	return int(FsFtruncate(loop, f, UvFile(file), c.LongLong(offset), cb))
 }
 
 // Sendfile sends data from one file descriptor to another.
-func (f *File) Sendfile(outFd int, inFd int, inOffset int64, length int, cb FsCb) int {
-	return int(FsSendfile(f.Loop, f.Req, c.Int(outFd), c.Int(inFd), c.LongLong(inOffset), c.Int(length), cb))
+func (f *Fs) Sendfile(loop *Loop, outFd int, inFd int, inOffset int64, length int, cb FsCb) int {
+	return int(FsSendfile(loop, f, c.Int(outFd), c.Int(inFd), c.LongLong(inOffset), c.Int(length), cb))
 }
 
 // Access checks the access permissions of a file specified by the path.
-func (f *File) Access(path string, flags int, cb FsCb) int {
-	return int(FsAccess(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), cb))
+func (f *Fs) Access(loop *Loop, path string, flags int, cb FsCb) int {
+	return int(FsAccess(loop, f, c.AllocaCStr(path), c.Int(flags), cb))
 }
 
 // Chmod changes the permissions of a file specified by the path.
-func (f *File) Chmod(path string, mode int, cb FsCb) int {
-	return int(FsChmod(f.Loop, f.Req, c.AllocaCStr(path), c.Int(mode), cb))
+func (f *Fs) Chmod(loop *Loop, path string, mode int, cb FsCb) int {
+	return int(FsChmod(loop, f, c.AllocaCStr(path), c.Int(mode), cb))
 }
 
 // Fchmod changes the permissions of a file descriptor.
-func (f *File) Fchmod(file int, mode int, cb FsCb) int {
-	return int(FsFchmod(f.Loop, f.Req, UvFile(file), c.Int(mode), cb))
+func (f *Fs) Fchmod(loop *Loop, file int, mode int, cb FsCb) int {
+	return int(FsFchmod(loop, f, UvFile(file), c.Int(mode), cb))
 }
 
 // Utime updates the access and modification times of a file specified by the path.
-func (f *File) Utime(path string, atime int, mtime int, cb FsCb) int {
-	return int(FsUtime(f.Loop, f.Req, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
+func (f *Fs) Utime(loop *Loop, path string, atime int, mtime int, cb FsCb) int {
+	return int(FsUtime(loop, f, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Futime updates the access and modification times of a file descriptor.
-func (f *File) Futime(file int, atime int, mtime int, cb FsCb) int {
-	return int(FsFutime(f.Loop, f.Req, UvFile(file), c.Int(atime), c.Int(mtime), cb))
+func (f *Fs) Futime(loop *Loop, file int, atime int, mtime int, cb FsCb) int {
+	return int(FsFutime(loop, f, UvFile(file), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Lutime updates the access and modification times of a file specified by the path, even if the path is a symbolic link.
-func (f *File) Lutime(path string, atime int, mtime int, cb FsCb) int {
-	return int(FsLutime(f.Loop, f.Req, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
+func (f *Fs) Lutime(loop *Loop, path string, atime int, mtime int, cb FsCb) int {
+	return int(FsLutime(loop, f, c.AllocaCStr(path), c.Int(atime), c.Int(mtime), cb))
 }
 
 // Link creates a new link to an existing file.
-func (f *File) Link(path string, newPath string, cb FsCb) int {
-	return int(FsLink(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
+func (f *Fs) Link(loop *Loop, path string, newPath string, cb FsCb) int {
+	return int(FsLink(loop, f, c.AllocaCStr(path), c.AllocaCStr(newPath), cb))
 }
 
 // Symlink creates a symbolic link from the path to the new path.
-func (f *File) Symlink(path string, newPath string, flags int, cb FsCb) int {
-	return int(FsSymlink(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
+func (f *Fs) Symlink(loop *Loop, path string, newPath string, flags int, cb FsCb) int {
+	return int(FsSymlink(loop, f, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
 }
 
 // Readlink reads the target of a symbolic link.
-func (f *File) Readlink(path string, cb FsCb) int {
-	return int(FsReadlink(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Readlink(loop *Loop, path string, cb FsCb) int {
+	return int(FsReadlink(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Realpath resolves the absolute path of a file.
-func (f *File) Realpath(path string, cb FsCb) int {
-	return int(FsRealpath(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Realpath(loop *Loop, path string, cb FsCb) int {
+	return int(FsRealpath(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Copyfile copies a file from the source path to the destination path.
-func (f *File) Copyfile(path string, newPath string, flags int, cb FsCb) int {
-	return int(FsCopyfile(f.Loop, f.Req, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
+func (f *Fs) Copyfile(loop *Loop, path string, newPath string, flags int, cb FsCb) int {
+	return int(FsCopyfile(loop, f, c.AllocaCStr(path), c.AllocaCStr(newPath), c.Int(flags), cb))
 }
 
 // Scandir scans a directory for entries.
-func (f *File) Scandir(path string, flags int, cb FsCb) int {
-	return int(FsScandir(f.Loop, f.Req, c.AllocaCStr(path), c.Int(flags), cb))
+func (f *Fs) Scandir(loop *Loop, path string, flags int, cb FsCb) int {
+	return int(FsScandir(loop, f, c.AllocaCStr(path), c.Int(flags), cb))
 }
 
 // OpenDir opens a directory specified by the path.
-func (f *File) OpenDir(path string, cb FsCb) int {
-	return int(FsOpenDir(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) OpenDir(loop *Loop, path string, cb FsCb) int {
+	return int(FsOpenDir(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Readdir reads entries from an open directory.
-func (f *File) Readdir(dir int, cb FsCb) int {
-	return int(FsReaddir(f.Loop, f.Req, c.Int(dir), cb))
+func (f *Fs) Readdir(loop *Loop, dir int, cb FsCb) int {
+	return int(FsReaddir(loop, f, c.Int(dir), cb))
 }
 
 // CloseDir closes an open directory.
-func (f *File) CloseDir() int {
-	return int(FsCloseDir(f.Loop, f.Req))
+func (f *Fs) CloseDir(loop *Loop) int {
+	return int(FsCloseDir(loop, f))
 }
 
 // Statfs retrieves file system status information.
-func (f *File) Statfs(path string, cb FsCb) int {
-	return int(FsStatfs(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Statfs(loop *Loop, path string, cb FsCb) int {
+	return int(FsStatfs(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Chown Change file ownership
-func (f *File) Chown(path string, uid int, gid int, cb FsCb) int {
-	return int(FsChown(f.Loop, f.Req, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
+func (f *Fs) Chown(loop *Loop, path string, uid int, gid int, cb FsCb) int {
+	return int(FsChown(loop, f, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
 }
 
 // Fchown Change file ownership by file descriptor
-func (f *File) Fchown(file int, uid int, gid int, cb FsCb) int {
-	return int(FsFchown(f.Loop, f.Req, UvFile(file), c.Int(uid), c.Int(gid), cb))
+func (f *Fs) Fchown(loop *Loop, file int, uid int, gid int, cb FsCb) int {
+	return int(FsFchown(loop, f, UvFile(file), c.Int(uid), c.Int(gid), cb))
 }
 
 // Lchown Change file ownership (symlink)
-func (f *File) Lchown(path string, uid int, gid int, cb FsCb) int {
-	return int(FsLchown(f.Loop, f.Req, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
+func (f *Fs) Lchown(loop *Loop, path string, uid int, gid int, cb FsCb) int {
+	return int(FsLchown(loop, f, c.AllocaCStr(path), c.Int(uid), c.Int(gid), cb))
 }
 
 // Lstat Get file status (symlink)
-func (f *File) Lstat(path string, cb FsCb) int {
-	return int(FsLstat(f.Loop, f.Req, c.AllocaCStr(path), cb))
+func (f *Fs) Lstat(loop *Loop, path string, cb FsCb) int {
+	return int(FsLstat(loop, f, c.AllocaCStr(path), cb))
 }
 
 // Init Initialize a file event handle

@@ -95,29 +95,33 @@ const (
 
 type Errno c.Int
 
-//go:linkname TranslateSysError C.uv_translate_sys_error
-func TranslateSysError(sysErrno c.Int) c.Int
+//go:linkname UvTranslateSysError C.uv_translate_sys_error
+func UvTranslateSysError(sysErrno c.Int) c.Int
 
-//go:linkname Strerror C.uv_strerror
-func Strerror(err c.Int) *c.Char
+//go:linkname UvStrerror C.uv_strerror
+func UvStrerror(err c.Int) *c.Char
 
-//go:linkname StrerrorR C.uv_strerror_r
-func StrerrorR(err c.Int, buf *c.Char, bufLen uintptr) *c.Char
+//go:linkname UvStrerrorR C.uv_strerror_r
+func UvStrerrorR(err c.Int, buf *c.Char, bufLen uintptr) *c.Char
 
-//go:linkname ErrName C.uv_err_name
-func ErrName(err c.Int) *c.Char
+//go:linkname UvErrName C.uv_err_name
+func UvErrName(err c.Int) *c.Char
 
-//go:linkname ErrNameR C.uv_err_name_r
-func ErrNameR(err c.Int, buf *c.Char, bufLen uintptr) *c.Char
+//go:linkname UvErrNameR C.uv_err_name_r
+func UvErrNameR(err c.Int, buf *c.Char, bufLen uintptr) *c.Char
 
 func (e Errno) Error() string {
-	return c.GoString(Strerror(c.Int(e)))
+	return c.GoString(UvStrerror(c.Int(e)))
 }
 
 func (e Errno) Name() string {
-	return c.GoString(ErrName(c.Int(e)))
+	return c.GoString(UvErrName(c.Int(e)))
 }
 
 func (e Errno) TranslateSysError() c.Int {
-	return TranslateSysError(c.Int(e))
+	return UvTranslateSysError(c.Int(e))
+}
+
+func Strerror(err int) string {
+	return c.GoString(UvStrerror(c.Int(err)))
 }

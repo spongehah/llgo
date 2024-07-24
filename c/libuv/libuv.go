@@ -3,6 +3,7 @@ package libuv
 import (
 	"github.com/goplus/llgo/c"
 	"github.com/goplus/llgo/c/net"
+	"unsafe"
 	_ "unsafe"
 )
 
@@ -216,17 +217,37 @@ type PollCb func(handle *Poll, status c.Int, events c.Int)
 
 // ----------------------------------------------
 
-//go:linkname Version C.uv_version
-func Version() c.Uint
+//go:linkname UvVersion C.uv_version
+func UvVersion() c.Uint
 
-//go:linkname VersionString C.uv_version_string
-func VersionString() *c.Char
+//go:linkname UvVersionString C.uv_version_string
+func UvVersionString() *c.Char
 
-//go:linkname LibraryShutdown C.uv_library_shutdown
-func LibraryShutdown()
+//go:linkname UvLibraryShutdown C.uv_library_shutdown
+func UvLibraryShutdown()
 
-//go:linkname ReplaceAllocator C.uv_replace_allocator
-func ReplaceAllocator(mallocFunc MallocFunc, reallocFunc ReallocFunc, callocFunc CallocFunc, freeFunc FreeFunc) c.Int
+//go:linkname UvReplaceAllocator C.uv_replace_allocator
+func UvReplaceAllocator(mallocFunc MallocFunc, reallocFunc ReallocFunc, callocFunc CallocFunc, freeFunc FreeFunc) c.Int
+
+// Version returns the version of libuv.
+func Version() int {
+	return int(UvVersion())
+}
+
+// VersionString returns the version string of libuv.
+func VersionString() string {
+	return c.GoString(UvVersionString())
+}
+
+// LibraryShutdown shuts down the libuv library.
+func LibraryShutdown() {
+	UvLibraryShutdown()
+}
+
+// ReplaceAllocator replaces the allocator functions used by libuv.
+func ReplaceAllocator(mallocFunc MallocFunc, reallocFunc ReallocFunc, callocFunc CallocFunc, freeFunc FreeFunc) int {
+	return int(UvReplaceAllocator(mallocFunc, reallocFunc, callocFunc, freeFunc))
+}
 
 // ----------------------------------------------
 
@@ -521,8 +542,13 @@ func (l *Loop) BackendTimeout() int {
 
 /* Buf related functions and method. */
 
-//go:linkname InitBuf C.uv_buf_init
-func InitBuf(base *c.Char, len c.Uint) Buf
+//go:linkname UvInitBuf C.uv_buf_init
+func UvInitBuf(base *c.Char, len c.Uint) Buf
+
+// InitBuf initializes a buffer with the given c.Char slice.
+func InitBuf(buffer []c.Char) Buf {
+	return UvInitBuf((*c.Char)(unsafe.Pointer(&buffer[0])), c.Uint(unsafe.Sizeof(buffer)))
+}
 
 // ----------------------------------------------
 
