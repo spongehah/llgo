@@ -8,6 +8,7 @@ import (
 
 /* Handle types. */
 
+// TODO(spongehah): Signal
 type Signal struct {
 	Unused [152]byte
 }
