@@ -11,12 +11,16 @@ import (
 )
 
 type Request struct {
-	Method  string
-	URL     *url.URL
-	Req     *hyper.Request
-	Host    string
-	Header  Header
-	timeout time.Duration
+	Method     string
+	URL        *url.URL
+	Proto      string // "HTTP/1.0"
+	ProtoMajor int    // 1
+	ProtoMinor int    // 0
+	Req        *hyper.Request
+	Host       string
+	Header     Header
+	Close      bool
+	timeout    time.Duration
 }
 
 func NewRequest(method, urlStr string, body io.Reader) (*Request, error) {

@@ -1,6 +1,8 @@
 package http
 
-import "time"
+import (
+	"time"
+)
 
 type Client struct {
 	Transport RoundTripper

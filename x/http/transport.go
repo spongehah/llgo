@@ -228,11 +228,6 @@ func (pc *persistConn) readWriteLoop(loop *libuv.Loop) {
 	// Poll all ready tasks and act on them...
 	rc := <-pc.reqch // blocking
 	alive := true
-	resp := &Response{
-		Request: rc.req,
-		Header:  make(Header),
-		Trailer: make(Header),
-	}
 	var bodyWriter *io.PipeWriter
 	var respBody *hyper.Body = nil
 	for alive {
@@ -289,14 +284,13 @@ func (pc *persistConn) readWriteLoop(loop *libuv.Loop) {
 				hyperResp := (*hyper.Response)(task.Value())
 				task.Free()
 
-				readResponseLineAndHeader(resp, hyperResp)
-				//err = readTransfer(resp, hyperResp)
-				//if err != nil {
-				//	rc.ch <- responseAndError{err: err}
-				//	// Free the resources
-				//	FreeResources(task, respBody, bodyWriter, exec, pc, rc)
-				//	return
-				//}
+				resp, err := ReadResponse(hyperResp, rc.req)
+				if err != nil {
+					rc.ch <- responseAndError{err: err}
+					// Free the resources
+					FreeResources(task, respBody, bodyWriter, exec, pc, rc)
+					return
+				}
 
 				respBody = hyperResp.Body()
 				resp.Body, bodyWriter = io.Pipe()
