@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/goplus/llgoexamples v0.0.0-20240731074046-5a409f9516df // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 )

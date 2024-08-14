@@ -108,7 +108,9 @@ type Poll struct {
 type Buf struct {
 	Base *c.Char
 	Len  uintptr
-} // ----------------------------------------------
+}
+
+// ----------------------------------------------
 
 /* Function type */
 
