@@ -2,9 +2,9 @@ package http
 
 import (
 	"fmt"
+	"net/textproto"
 
 	"github.com/goplus/llgo/c"
-	"github.com/goplus/llgo/x/textproto"
 	"github.com/goplus/llgoexamples/rust/hyper"
 )
 
@@ -84,14 +84,13 @@ func CanonicalHeaderKey(s string) string { return textproto.CanonicalMIMEHeaderK
 // AppendToResponseHeader (HeadersForEachCallback) prints each header to the console
 func AppendToResponseHeader(userdata c.Pointer, name *uint8, nameLen uintptr, value *uint8, valueLen uintptr) c.Int {
 	resp := (*Response)(userdata)
-	nameStr := string((*[1 << 30]byte)(c.Pointer(name))[:nameLen:nameLen])
-	valueStr := string((*[1 << 30]byte)(c.Pointer(value))[:valueLen:valueLen])
+	nameStr := c.GoString((*int8)(c.Pointer(name)), nameLen)
+	valueStr := c.GoString((*int8)(c.Pointer(value)), valueLen)
 
 	if resp.Header == nil {
 		resp.Header = make(Header)
 	}
-	//resp.Header.Add(nameStr, valueStr)
-	resp.Header[nameStr] = append(resp.Header[nameStr], valueStr)
+	resp.Header.Add(nameStr, valueStr)
 	return hyper.IterContinue
 }
 

@@ -34,10 +34,10 @@ func ReadResponse(hyperResp *hyper.Response, req *Request) (*Response, error) {
 
 	fixPragmaCacheControl(req.Header)
 
-	//err = readTransfer(resp, hyperResp)
-	//if err != nil {
-	//	return nil, err
-	//}
+	err := readTransfer(resp)
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 
@@ -46,7 +46,7 @@ func readResponseLineAndHeader(resp *Response, hyperResp *hyper.Response) {
 	rp := hyperResp.ReasonPhrase()
 	rpLen := hyperResp.ReasonPhraseLen()
 
-	resp.Status = strconv.Itoa(int(hyperResp.Status())) + " " + string((*[1 << 30]byte)(c.Pointer(rp))[:rpLen:rpLen])
+	resp.Status = strconv.Itoa(int(hyperResp.Status())) + " " + c.GoString((*int8)(c.Pointer(rp)), rpLen)
 	resp.StatusCode = int(hyperResp.Status())
 
 	version := int(hyperResp.Version())

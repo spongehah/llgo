@@ -16,7 +16,7 @@ func main() {
 	}
 
 	//req.Header.Set("accept", "*/*")
-	//req.Header.Set("accept-encoding", "gzip, identity")
+	req.Header.Set("accept-encoding", "identity")
 	//req.Header.Set("cache-control", "no-cache")
 	//req.Header.Set("pragma", "no-cache")
 	//req.Header.Set("priority", "u=0, i")
@@ -43,4 +43,5 @@ func main() {
 		return
 	}
 	fmt.Println(string(body))
+	defer resp.Body.Close()
 }

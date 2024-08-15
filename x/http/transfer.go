@@ -3,12 +3,10 @@ package http
 import (
 	"fmt"
 	"io"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/goplus/llgo/x/textproto"
-	"github.com/goplus/llgoexamples/rust/hyper"
 )
 
 type transferReader struct {
@@ -47,7 +45,7 @@ func (noBody) Read([]byte) (int, error)         { return 0, io.EOF }
 func (noBody) Close() error                     { return nil }
 func (noBody) WriteTo(io.Writer) (int64, error) { return 0, nil }
 
-func readTransfer(msg any, hyperResp *hyper.Response) (err error) {
+func readTransfer(msg any) (err error) {
 	t := &transferReader{RequestMethod: "GET"}
 
 	// Unify input
