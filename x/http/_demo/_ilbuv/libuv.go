@@ -1,10 +1,11 @@
 package _ilbuv
 
 import (
-_ "unsafe"
+	_ "unsafe"
 
-"github.com/goplus/llgo/c"
-"github.com/goplus/llgo/c/net"
+	"github.com/goplus/llgo/c"
+	"github.com/goplus/llgo/c/net"
+	"github.com/goplus/llgo/c/syscall"
 )
 
 const (
@@ -483,6 +484,8 @@ func (handle *Handle) IsWritable() c.Int {
 	return 0
 }
 
+type File c.Int
+
 //go:linkname Pipe C.uv_pipe
 func Pipe(fds [2]File, readFlags c.Int, writeFlags c.Int) c.Int {
 	return 0
@@ -896,4 +899,3 @@ func ErrName(err Errno) *c.Char
 
 //go:linkname ErrNameR C.uv_err_name_r
 func ErrNameR(err Errno, buf *c.Char, bufLen uintptr) *c.Char
-

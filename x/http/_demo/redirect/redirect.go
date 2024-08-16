@@ -8,12 +8,14 @@ import (
 )
 
 func main() {
-	resp, err := http.Post("http://httpbin.org/post", "", nil)
+	resp, err := http.Get("http://localhost:8080") // Start "../server/redirectServer.go" before running
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(resp.Status)
+	fmt.Println(resp.Status, "read bytes: ", resp.ContentLength)
+	fmt.Println(resp.Proto)
+	resp.PrintHeaders()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)

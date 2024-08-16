@@ -1,14 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
-	"github.com/goplus/llgoexamples/x/http"
+	"github.com/goplus/llgo/x/http"
 )
 
 func main() {
-	resp, err := http.Post("https://jsonplaceholder.typicode.com/posts", "application/json; charset=UTF-8", nil)
+	data := []byte(`{"id":1,"title":"foo","body":"bar","userId":"1"}`)
+	resp, err := http.Post("https://jsonplaceholder.typicode.com/posts", "application/json; charset=UTF-8", bytes.NewBuffer(data))
 	if err != nil {
 		fmt.Println(err)
 		return
