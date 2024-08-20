@@ -2,26 +2,43 @@ package main
 
 import (
 	"fmt"
-	"syscall"
-	"unsafe"
-
-	"github.com/goplus/llgo/c"
-	"github.com/goplus/llgo/c/net"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 )
 
-func main() {
-	host := "localhost"
-	port := "8080"
-	var hints net.AddrInfo
-	c.Memset(c.Pointer(&hints), 0, unsafe.Sizeof(hints))
-	hints.Family = syscall.AF_UNSPEC
-	hints.SockType = syscall.SOCK_STREAM
+func postForm(urlStr string, data url.Values) (string, error) {
+	resp, err := http.PostForm(urlStr, data)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
 
-	var res *net.AddrInfo
-	status := net.Getaddrinfo(c.AllocaCStr(host), c.AllocaCStr(port), &hints, &res)
-	if status != 0 {
-		fmt.Println("getaddrinfo error")
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
+}
+
+func main() {
+	// 使用 HTTPbin 的 POST 端点
+	urlStr := "http://httpbin.org/post"
+
+	// 创建表单数据
+	formData := url.Values{
+		"name":  {"John Doe"},
+		"email": {"johndoe@example.com"},
+	}
+
+	// 发送请求
+	response, err := postForm(urlStr, formData)
+	if err != nil {
+		fmt.Println("Error:", err)
 		return
 	}
-	fmt.Println("end")
+
+	// 打印响应
+	fmt.Println("Response:", response)
 }
