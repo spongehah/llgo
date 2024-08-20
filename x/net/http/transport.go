@@ -14,6 +14,7 @@ import (
 	"github.com/goplus/llgo/c/libuv"
 	"github.com/goplus/llgo/c/net"
 	"github.com/goplus/llgo/c/syscall"
+	xnet "github.com/goplus/llgo/x/net"
 	"github.com/goplus/llgoexamples/rust/hyper"
 )
 
@@ -32,7 +33,11 @@ type Transport struct {
 	altProto    atomic.Value // of nil or map[string]RoundTripper, key is URI scheme
 	reqMu       sync.Mutex
 	reqCanceler map[cancelKey]func(error)
-	//Proxy       func(*Request) (*url.URL, error)
+	Proxy       func(*Request) (*url.URL, error)
+
+	connsPerHostMu   sync.Mutex
+	connsPerHost     map[connectMethodKey]int
+	connsPerHostWait map[connectMethodKey]wantConnQueue // waiting getConns
 
 	// MaxConnsPerHost optionally limits the total number of
 	// connections per host, including connections in the dialing,
@@ -42,7 +47,15 @@ type Transport struct {
 	MaxConnsPerHost int
 }
 
-var DefaultTransport RoundTripper = &Transport{}
+// DefaultTransport is the default implementation of Transport and is
+// used by DefaultClient. It establishes network connections as needed
+// and caches them for reuse by subsequent calls. It uses HTTP proxies
+// as directed by the environment variables HTTP_PROXY, HTTPS_PROXY
+// and NO_PROXY (or the lowercase versions thereof).
+var DefaultTransport RoundTripper = &Transport{
+	//Proxy: ProxyFromEnvironment,
+	Proxy: nil,
+}
 
 // taskId The unique identifier of the next task polled from the executor
 type taskId c.Int
@@ -345,32 +358,30 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persi
 func (t *Transport) queueForDial(w *wantConn) {
 	w.beforeDial()
 
-	go t.dialConnFor(w)
-	// TODO(spongehah) MaxConnsPerHost
-	//if t.MaxConnsPerHost <= 0 {
-	//	go t.dialConnFor(w)
-	//	return
-	//}
+	if t.MaxConnsPerHost <= 0 {
+		go t.dialConnFor(w)
+		return
+	}
 
-	//t.connsPerHostMu.Lock()
-	//defer t.connsPerHostMu.Unlock()
-	//
-	//if n := t.connsPerHost[w.key]; n < t.MaxConnsPerHost {
-	//	if t.connsPerHost == nil {
-	//		t.connsPerHost = make(map[connectMethodKey]int)
-	//	}
-	//	t.connsPerHost[w.key] = n + 1
-	//	go t.dialConnFor(w)
-	//	return
-	//}
-	//
-	//if t.connsPerHostWait == nil {
-	//	t.connsPerHostWait = make(map[connectMethodKey]wantConnQueue)
-	//}
-	//q := t.connsPerHostWait[w.key]
-	//q.cleanFront()
-	//q.pushBack(w)
-	//t.connsPerHostWait[w.key] = q
+	t.connsPerHostMu.Lock()
+	defer t.connsPerHostMu.Unlock()
+
+	if n := t.connsPerHost[w.key]; n < t.MaxConnsPerHost {
+		if t.connsPerHost == nil {
+			t.connsPerHost = make(map[connectMethodKey]int)
+		}
+		t.connsPerHost[w.key] = n + 1
+		go t.dialConnFor(w)
+		return
+	}
+
+	if t.connsPerHostWait == nil {
+		t.connsPerHostWait = make(map[connectMethodKey]wantConnQueue)
+	}
+	q := t.connsPerHostWait[w.key]
+	q.cleanFront()
+	q.pushBack(w)
+	t.connsPerHostWait[w.key] = q
 }
 
 // dialConnFor dials on behalf of w and delivers the result to w.
@@ -384,6 +395,8 @@ func (t *Transport) dialConnFor(w *wantConn) {
 	// TODO(spongehah) ConnPool
 	//delivered := w.tryDeliver(pc, err)
 	//if err == nil && (!delivered || pc.alt != nil) {
+	//
+	//}
 	//	// pconn was not passed to w,
 	//	// or it is HTTP/2 and can be shared.
 	//	// Add to the idle connection pool.
@@ -1097,13 +1110,28 @@ type connectMethod struct {
 func (t *Transport) connectMethodForRequest(treq *transportRequest) (cm connectMethod, err error) {
 	cm.targetScheme = treq.URL.Scheme
 	// TODO(spongehah) canonicalAddr & Proxy
-	//cm.targetAddr = canonicalAddr(treq.URL)
-	//if t.Proxy != nil {
-	//	cm.proxyURL, err = t.Proxy(treq.Request)
-	//}
+	cm.targetAddr = canonicalAddr(treq.URL)
+	if t.Proxy != nil {
+		cm.proxyURL, err = t.Proxy(treq.Request)
+	}
 	cm.treq = treq
 	cm.onlyH1 = treq.requiresHTTP1()
 	return cm, err
+}
+
+var portMap = map[string]string{
+	"http":   "80",
+	"https":  "443",
+	"socks5": "1080",
+}
+
+// canonicalAddr returns url.Host but always with a ":port" suffix.
+func canonicalAddr(url *url.URL) string {
+	port := url.Port()
+	if port == "" {
+		port = portMap[url.Scheme]
+	}
+	return xnet.JoinHostPort(idnaASCIIFromURL(url), port)
 }
 
 // connectMethodKey is the map key version of connectMethod, with a
@@ -1197,5 +1225,71 @@ func (cm *connectMethod) key() connectMethodKey {
 		scheme: cm.targetScheme,
 		addr:   targetAddr,
 		onlyH1: cm.onlyH1,
+	}
+}
+
+// A wantConnQueue is a queue of wantConns.
+type wantConnQueue struct {
+	// This is a queue, not a deque.
+	// It is split into two stages - head[headPos:] and tail.
+	// popFront is trivial (headPos++) on the first stage, and
+	// pushBack is trivial (append) on the second stage.
+	// If the first stage is empty, popFront can swap the
+	// first and second stages to remedy the situation.
+	//
+	// This two-stage split is analogous to the use of two lists
+	// in Okasaki's purely functional queue but without the
+	// overhead of reversing the list when swapping stages.
+	head    []*wantConn
+	headPos int
+	tail    []*wantConn
+}
+
+// len returns the number of items in the queue.
+func (q *wantConnQueue) len() int {
+	return len(q.head) - q.headPos + len(q.tail)
+}
+
+// pushBack adds w to the back of the queue.
+func (q *wantConnQueue) pushBack(w *wantConn) {
+	q.tail = append(q.tail, w)
+}
+
+// popFront removes and returns the wantConn at the front of the queue.
+func (q *wantConnQueue) popFront() *wantConn {
+	if q.headPos >= len(q.head) {
+		if len(q.tail) == 0 {
+			return nil
+		}
+		// Pick up tail as new head, clear tail.
+		q.head, q.headPos, q.tail = q.tail, 0, q.head[:0]
+	}
+	w := q.head[q.headPos]
+	q.head[q.headPos] = nil
+	q.headPos++
+	return w
+}
+
+// peekFront returns the wantConn at the front of the queue without removing it.
+func (q *wantConnQueue) peekFront() *wantConn {
+	if q.headPos < len(q.head) {
+		return q.head[q.headPos]
+	}
+	if len(q.tail) > 0 {
+		return q.tail[0]
+	}
+	return nil
+}
+
+// cleanFront pops any wantConns that are no longer waiting from the head of the
+// queue, reporting whether any were popped.
+func (q *wantConnQueue) cleanFront() (cleaned bool) {
+	for {
+		w := q.peekFront()
+		if w == nil || w.waiting() {
+			return cleaned
+		}
+		q.popFront()
+		cleaned = true
 	}
 }
