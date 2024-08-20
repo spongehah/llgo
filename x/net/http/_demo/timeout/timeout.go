@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/goplus/llgo/x/http"
+	"github.com/goplus/llgo/x/net/http"
 )
 
 func main() {

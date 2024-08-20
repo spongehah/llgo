@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -82,9 +83,9 @@ func NewRequestWithContext(ctx context.Context, method, urlStr string, body io.R
 	if !validMethod(method) {
 		return nil, fmt.Errorf("net/http: invalid method %q", method)
 	}
-	//if ctx == nil {
-	//	return nil, errors.New("net/http: nil Context")
-	//}
+	if ctx == nil {
+		return nil, errors.New("net/http: nil Context")
+	}
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err

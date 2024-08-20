@@ -3,24 +3,19 @@ package main
 import (
 	"fmt"
 	"io"
-	"net/url"
 
-	"github.com/goplus/llgo/x/http"
+	"github.com/goplus/llgo/x/net/http"
 )
 
 func main() {
-	formData := url.Values{
-		"name":  {"John Doe"},
-		"email": {"johndoe@example.com"},
-	}
-
-	resp, err := http.PostForm("http://httpbin.org/post", formData)
+	resp, err := http.Get("https://www.baidu.com")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer resp.Body.Close()
-
+	fmt.Println(resp.Status, "read bytes: ", resp.ContentLength)
+	fmt.Println(resp.Proto)
+	resp.PrintHeaders()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)
