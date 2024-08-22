@@ -33,7 +33,7 @@ func main() {
 		return
 	}
 	defer resp.Body.Close()
-
+	fmt.Println("Status:", resp.Status)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)

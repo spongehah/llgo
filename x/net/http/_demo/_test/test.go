@@ -1,58 +1,48 @@
 package main
 
-import (
-	"bytes"
-	"fmt"
-	"io"
-	"mime/multipart"
-	"net/http"
-	"os"
-	"path/filepath"
-)
+type resp struct {
+	field string
+}
+
+type respWrapper struct {
+	resp *resp
+}
+
+type requestAndChan struct {
+	resc chan respWrapper
+	gone chan struct{}
+}
 
 func main() {
-	url := "http://httpbin.org/post"
-	filePath := "/Users/spongehah/go/src/llgo/x/http/_demo/get/get.go"
+	reqch := make(chan requestAndChan, 1)
+	closech := make(chan struct{}, 1)
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer file.Close()
+	go func() {
+		rc := <-reqch
+		println("receive reqch")
 
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+		resp := &resp{field: "field"}
 
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+		select {
+		case rc.resc <- respWrapper{resp: resp}:
+			println("return respWrapper")
+		case <-rc.gone:
+		}
+	}()
 
-	_, err = io.Copy(part, file)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	gone := make(chan struct{}, 1)
+	resc := make(chan respWrapper, 1)
 
-	err = writer.Close()
-	if err != nil {
-		fmt.Println(err)
-		return
+	reqch <- requestAndChan{
+		resc: resc,
+		gone: gone,
 	}
 
-	resp, err := http.Post(url, writer.FormDataContentType(), body)
-	if err != nil {
-		fmt.Println(err)
-		return
+	select {
+	case <-closech:
+		println("resp is nil")
+	case rc := <-resc:
+		println("receive rc")
+		println("resp: ", rc.resp.field)
 	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(respBody))
 }
