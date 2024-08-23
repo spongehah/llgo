@@ -36,6 +36,7 @@ func main() {
 		println(err.Error())
 		return
 	}
+	fmt.Println(resp.Status)
 	resp.PrintHeaders()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
