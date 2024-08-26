@@ -1,48 +1,44 @@
 package main
 
-type resp struct {
-	field string
-}
-
-type respWrapper struct {
-	resp *resp
-}
-
-type requestAndChan struct {
-	resc chan respWrapper
-	gone chan struct{}
-}
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+)
 
 func main() {
-	reqch := make(chan requestAndChan, 1)
-	closech := make(chan struct{}, 1)
+	//url := "http://httpbin.org/post"
+	url := "http://localhost:8080"
+	//filePath := "/Users/spongehah/go/src/llgo/x/net/http/_demo/upload/example.txt" // Replace with your file path
+	filePath := "/Users/spongehah/Downloads/xiaoshuo.txt" // Replace with your file path
 
-	go func() {
-		rc := <-reqch
-		println("receive reqch")
-
-		resp := &resp{field: "field"}
-
-		select {
-		case rc.resc <- respWrapper{resp: resp}:
-			println("return respWrapper")
-		case <-rc.gone:
-		}
-	}()
-
-	gone := make(chan struct{}, 1)
-	resc := make(chan respWrapper, 1)
-
-	reqch <- requestAndChan{
-		resc: resc,
-		gone: gone,
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
 	}
+	defer file.Close()
 
-	select {
-	case <-closech:
-		println("resp is nil")
-	case rc := <-resc:
-		println("receive rc")
-		println("resp: ", rc.resp.field)
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", url, file)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
+	req.Header.Set("expect", "100-continue")
+	resp, err := client.Do(req)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	fmt.Println("Status:", resp.Status)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(respBody))
 }
