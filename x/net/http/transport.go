@@ -73,6 +73,7 @@ type Transport struct {
 	// libuv and hyper related
 	loopInitOnce sync.Once
 	loop         *libuv.Loop
+	async        *libuv.Async
 	exec         *hyper.Executor
 }
 
@@ -309,12 +310,10 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 	}
 	t.loopInitOnce.Do(func() {
 		t.loop = libuv.LoopNew()
+		t.async = &libuv.Async{}
 		t.exec = hyper.NewExecutor()
 
-		//idle := &libuv.Idle{}
-		//libuv.InitIdle(t.loop, idle)
-		//(*libuv.Handle)(c.Pointer(idle)).SetData(c.Pointer(t))
-		//idle.Start(readWriteLoop)
+		t.loop.Async(t.async, asyncCb)
 
 		checker := &libuv.Check{}
 		libuv.InitCheck(t.loop, checker)
@@ -473,9 +472,10 @@ func (t *Transport) doRoundTrip(req *Request) (*Response, error) {
 		var resp *Response
 		if pconn.alt != nil {
 			// HTTP/2 path.
-			t.setReqCanceler(cancelKey, nil) // not cancelable with CancelRequest
+			t.setReqCanceler(cancelKey, nil) // HTTP/2 not cancelable with CancelRequest
 			resp, err = pconn.alt.RoundTrip(req)
 		} else {
+			// HTTP/1.X path.
 			resp, err = pconn.roundTrip(treq)
 		}
 
@@ -485,8 +485,36 @@ func (t *Transport) doRoundTrip(req *Request) (*Response, error) {
 		}
 
 		// Failed. Clean up and determine whether to retry.
-		// TODO(spongehah) Retry & ConnPool(t.doRoundTrip)
-		return nil, err
+		// TODO(spongehah) ConnPool(t.doRoundTrip)
+		//if http2isNoCachedConnError(err) {
+		//	if t.removeIdleConn(pconn) {
+		//		t.decConnsPerHost(pconn.cacheKey)
+		//	}
+		//} else
+		if !pconn.shouldRetryRequest(req, err) {
+			// Issue 16465: return underlying net.Conn.Read error from peek,
+			// as we've historically done.
+			if e, ok := err.(nothingWrittenError); ok {
+				err = e.error
+			}
+			if e, ok := err.(transportReadFromServerError); ok {
+				err = e.err
+			}
+			if b, ok := req.Body.(*readTrackingBody); ok && !b.didClose {
+				// Issue 49621: Close the request body if pconn.roundTrip
+				// didn't do so already. This can happen if the pconn
+				// write loop exits without reading the write request.
+				req.closeBody()
+			}
+			return nil, err
+		}
+		testHookRoundTripRetried()
+
+		// Rewind the body if we're able to.
+		req, err = rewindBody(req)
+		if err != nil {
+			return nil, err
+		}
 	}
 }
 
@@ -552,7 +580,7 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persi
 			// what caused w.err; if so, prefer to return the
 			// cancellation error (see golang.org/issue/16049).
 			select {
-			// TODO(spongehah) cancel(t.getConn)
+			// TODO(spongehah) timeout(t.getConn)
 			//case <-req.Cancel:
 			//	return nil, errRequestCanceledConn
 			//case <-req.Context().Done():
@@ -569,7 +597,7 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persi
 			}
 		}
 		return w.pc, w.err
-	// TODO(spongehah) cancel(t.getConn)
+	// TODO(spongehah) timeout(t.getConn)
 	//case <-req.Cancel:
 	//	return nil, errRequestCanceledConn
 	//case <-req.Context().Done():
@@ -947,9 +975,8 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	// Let's wait for the handshake to finish...
 
 	pc.t.exec.Push(handshakeTask)
-	async := &libuv.Async{}
-	pc.t.loop.Async(async, asyncCb)
-	async.Send()
+	// Wake up libuv. Loop
+	pc.t.async.Send()
 
 	//var respHeaderTimer <-chan time.Time
 	//cancelChan := req.Request.Cancel
@@ -1003,7 +1030,7 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 				return nil, pc.mapRoundTripError(req, startBytesWritten, re.err)
 			}
 			return re.res, nil
-		// TODO(spongehah) cancel(pc.roundTrip)
+		// TODO(spongehah) timeout(pc.roundTrip)
 		//case <-cancelChan:
 		//	canceled = pc.t.cancelRequest(req.cancelKey, errRequestCanceled)
 		//	cancelChan = nil
@@ -1022,15 +1049,14 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	}
 }
 
+// asyncCb No functionBody, just used to wake up libuv.Loop
 func asyncCb(async *libuv.Async) {
-	println("async called")
 }
 
 // readWriteLoop handles the main I/O loop for a persistent connection.
 // It processes incoming requests, sends them to the server, and handles responses.
-func readWriteLoop(idle *libuv.Check) {
-	println("polling")
-	t := (*Transport)((*libuv.Handle)(c.Pointer(idle)).GetData())
+func readWriteLoop(checker *libuv.Check) {
+	t := (*Transport)((*libuv.Handle)(c.Pointer(checker)).GetData())
 
 	// Read this once, before loop starts. (to avoid races in tests)
 	testHookMu.Lock()
@@ -1313,7 +1339,7 @@ func readWriteLoop(idle *libuv.Check) {
 			//	pc.wroteRequest() &&
 			//	replaced && tryPutIdleConn(trace)
 
-			// TODO(spongehah) cancel(pc.readWriteLoop)
+			// TODO(spongehah) timeout(t.readWriteLoop)
 			//case <-rw.rc.req.Cancel:
 			//	taskData.pc.alive = false
 			//	pc.t.CancelRequest(rw.rc.req)
@@ -1754,6 +1780,7 @@ type persistConn struct {
 	// mutateHeaderFunc is an optional func to modify extra
 	// headers on each outbound request before it's written. (the
 	// original Request given to RoundTrip is not modified)
+	reused           bool // whether conn has had successful request/response and is being reused.
 	mutateHeaderFunc func(Header)
 
 	// other
@@ -1866,12 +1893,78 @@ func (pc *persistConn) canceled() error {
 	return pc.canceledErr
 }
 
+// isReused reports whether this connection has been used before.
+func (pc *persistConn) isReused() bool {
+	pc.mu.Lock()
+	r := pc.reused
+	pc.mu.Unlock()
+	return r
+}
+
 // isBroken reports whether this connection is in a known broken state.
 func (pc *persistConn) isBroken() bool {
 	pc.mu.Lock()
 	b := pc.closed != nil
 	pc.mu.Unlock()
 	return b
+}
+
+// shouldRetryRequest reports whether we should retry sending a failed
+// HTTP request on a new connection. The non-nil input error is the
+// error from roundTrip.
+func (pc *persistConn) shouldRetryRequest(req *Request, err error) bool {
+	if http2isNoCachedConnError(err) {
+		// Issue 16582: if the user started a bunch of
+		// requests at once, they can all pick the same conn
+		// and violate the server's max concurrent streams.
+		// Instead, match the HTTP/1 behavior for now and dial
+		// again to get a new TCP connection, rather than failing
+		// this request.
+		return true
+	}
+	if err == errMissingHost {
+		// User error.
+		return false
+	}
+	if !pc.isReused() {
+		// This was a fresh connection. There's no reason the server
+		// should've hung up on us.
+		//
+		// Also, if we retried now, we could loop forever
+		// creating new connections and retrying if the server
+		// is just hanging up on us because it doesn't like
+		// our request (as opposed to sending an error).
+		return false
+	}
+	if _, ok := err.(nothingWrittenError); ok {
+		// We never wrote anything, so it's safe to retry, if there's no body or we
+		// can "rewind" the body with GetBody.
+		return req.outgoingLength() == 0 || req.GetBody != nil
+	}
+	if !req.isReplayable() {
+		// Don't retry non-idempotent requests.
+		return false
+	}
+	if _, ok := err.(transportReadFromServerError); ok {
+		// We got some non-EOF net.Conn.Read failure reading
+		// the 1st response byte from the server.
+		return true
+	}
+	if err == errServerClosedIdle {
+		// The server replied with io.EOF while we were trying to
+		// read the response. Probably an unfortunately keep-alive
+		// timeout, just as the client was writing a request.
+		return true
+	}
+	return false // conservatively
+}
+
+// isNoCachedConnError reports whether err is of type noCachedConnError
+// or its equivalent renamed type in net/http2's h2_bundle.go. Both types
+// may coexist in the same running program.
+func http2isNoCachedConnError(err error) bool { // h2_bundle.go
+	_, ok := err.(interface{ IsHTTP2NoCachedConnError() })
+	return ok
 }
 
 // connectMethod is the map key (in its String form) for keeping persistent

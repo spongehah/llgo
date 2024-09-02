@@ -241,7 +241,6 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 
 // didTimeout is non-nil only if err != nil.
 func (c *Client) send(req *Request, deadline time.Time) (resp *Response, didTimeout func() bool, err error) {
-	// TODO(spongehah) cookie(c.send)
 	if c.Jar != nil {
 		for _, cookie := range c.Jar.Cookies(req.URL) {
 			req.AddCookie(cookie)
@@ -488,7 +487,7 @@ func knownRoundTripperImpl(rt RoundTripper, req *Request) bool {
 			return knownRoundTripperImpl(altRT, req)
 		}
 		return true
-		// TODO(spongehah)
+		// TODO(spongehah) http2
 		//case *http2Transport, http2noDialH2RoundTripper:
 		//	return true
 	}
