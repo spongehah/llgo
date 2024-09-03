@@ -173,8 +173,6 @@ func readTransfer(msg any, r *io.PipeReader) (err error) {
 		if isResponse && noResponseBodyExpected(t.RequestMethod) || !bodyAllowedForStatus(t.StatusCode) {
 			t.Body = NoBody
 		} else {
-			// TODO(spongehah) ChunkReader(readTransfer)
-			//t.Body = &body{src: internal.NewChunkedReader(r), hdr: msg, r: r, closing: t.Close}
 			t.Body = &body{src: r, hdr: msg, r: r, closing: t.Close}
 		}
 	case realLength == 0:
@@ -665,15 +663,15 @@ func (req *Request) unwrapBody() io.Reader {
 	return req.Body
 }
 
-func (r *Request) writeBody(hyperReq *hyper.Request) error {
+func (r *Request) writeBody(hyperReq *hyper.Request, treq *transportRequest) error {
 	if r.Body != nil {
 		var body = r.unwrapBody()
 		hyperReqBody := hyper.NewBody()
 		buf := make([]byte, defaultChunkSize)
 		reqData := &bodyReq{
-			body:      body,
-			buf:       buf,
-			closeBody: r.closeBody,
+			body: body,
+			buf:  buf,
+			treq: treq,
 		}
 		hyperReqBody.SetUserdata(c.Pointer(reqData))
 		hyperReqBody.SetDataFunc(setPostData)
@@ -683,9 +681,9 @@ func (r *Request) writeBody(hyperReq *hyper.Request) error {
 }
 
 type bodyReq struct {
-	body      io.Reader
-	buf       []byte
-	closeBody func() error
+	body io.Reader
+	buf  []byte
+	treq *transportRequest
 }
 
 func setPostData(userdata c.Pointer, ctx *hyper.Context, chunk **hyper.Buf) c.Int {
@@ -694,10 +692,11 @@ func setPostData(userdata c.Pointer, ctx *hyper.Context, chunk **hyper.Buf) c.In
 	if err != nil {
 		if err == io.EOF {
 			*chunk = nil
-			req.closeBody()
+			req.treq.closeBody()
 			return hyper.PollReady
 		}
 		fmt.Println("error reading request body: ", err)
+		req.treq.setError(requestBodyReadError{err})
 		return hyper.PollError
 	}
 	if n > 0 {
@@ -706,10 +705,11 @@ func setPostData(userdata c.Pointer, ctx *hyper.Context, chunk **hyper.Buf) c.In
 	}
 	if n == 0 {
 		*chunk = nil
-		req.closeBody()
+		req.treq.closeBody()
 		return hyper.PollReady
 	}
-	req.closeBody()
-	fmt.Printf("error reading request body: %s\n", c.GoString(c.Strerror(os.Errno)))
+	req.treq.closeBody()
+	err = fmt.Errorf("error reading request body: %s\n", c.GoString(c.Strerror(os.Errno)))
+	req.treq.setError(requestBodyReadError{err})
 	return hyper.PollError
 }

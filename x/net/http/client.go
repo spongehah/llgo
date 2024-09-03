@@ -307,14 +307,17 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 		forkReq()
 	}
 
-	// TODO(spongehah) timeout(send)
+	// TODO(spongehah) tmp timeout(send)
+	//stopTimer, didTimeout := setRequestCancel(req, rt, deadline)
+	req.timeoutch = make(chan struct{}, 1)
 	req.deadline = deadline
+	req.ctx.Done()
 	if deadline.IsZero() {
 		didTimeout = alwaysFalse
+		defer close(req.timeoutch)
 	} else {
 		didTimeout = func() bool { return req.timer.GetDueIn() == 0 }
 	}
-	//stopTimer, didTimeout := setRequestCancel(req, rt, deadline)
 
 	resp, err = rt.RoundTrip(req)
 	if err != nil {
