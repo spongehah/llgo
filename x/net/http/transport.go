@@ -47,6 +47,8 @@ type Transport struct {
 	idleConnWait map[connectMethodKey]wantConnQueue  // waiting getConns
 	idleLRU      connLRU
 
+	activeConnections map[*persistConn]struct{}
+
 	reqMu       sync.Mutex
 	reqCanceler map[cancelKey]func(error)
 
@@ -432,6 +434,19 @@ func (t *Transport) removeIdleConnLocked(pconn *persistConn) bool {
 	return removed
 }
 
+func (t *Transport) trackConn(c *persistConn, add bool) {
+	t.idleMu.Lock()
+	defer t.idleMu.Unlock()
+	if t.activeConnections == nil {
+		t.activeConnections = make(map[*persistConn]struct{})
+	}
+	if add {
+		t.activeConnections[c] = struct{}{}
+	} else {
+		delete(t.activeConnections, c)
+	}
+}
+
 func (t *Transport) setReqCanceler(key cancelKey, fn func(error)) {
 	t.reqMu.Lock()
 	defer t.reqMu.Unlock()
@@ -711,6 +726,8 @@ func (t *Transport) doRoundTrip(req *Request) (*Response, error) {
 		// pre-CONNECTed to https server. In any case, we'll be ready
 		// to send it requests.
 		pconn, err := t.getConn(treq, cm)
+		// put pc into activeConnections.
+		t.trackConn(pconn, true)
 
 		if err != nil {
 			t.setReqCanceler(cancelKey, nil)
@@ -727,6 +744,9 @@ func (t *Transport) doRoundTrip(req *Request) (*Response, error) {
 			// HTTP/1.X path.
 			resp, err = pconn.roundTrip(treq)
 		}
+
+		// Remove the connection from the active map.
+		t.trackConn(pconn, false)
 
 		if err == nil {
 			resp.Request = origReq
@@ -819,27 +839,28 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persi
 	//	trace.GotConn(httptrace.GotConnInfo{Conn: w.pc.conn, Reused: w.pc.isReused()})
 	//}
 	if w.err != nil {
-		// If the request has been canceled, that's probably
-		// what caused w.err; if so, prefer to return the
-		// cancellation error (see golang.org/issue/16049).
-		select {
-		//case <-req.Cancel:
-		//	return nil, errRequestCanceledConn
-		//case <-req.Context().Done():
-		//	return nil, req.Context().Err()
-		case <-req.timeoutch:
-			if debugSwitch {
-				println("getConn: timeoutch")
-			}
-			return nil, errors.New("timeout: req.Context().Err()")
-		case err := <-cancelc:
-			if err == errRequestCanceled {
-				err = errRequestCanceledConn
-			}
-			return nil, err
-		default:
-			// return below
+		return nil, w.err
+	}
+	// If the request has been canceled, that's probably
+	// what caused w.err; if so, prefer to return the
+	// cancellation error (see golang.org/issue/16049).
+	select {
+	//case <-req.Cancel:
+	//	return nil, errRequestCanceledConn
+	//case <-req.Context().Done():
+	//	return nil, req.Context().Err()
+	case <-req.timeoutch:
+		if debugSwitch {
+			println("getConn: timeoutch")
 		}
+		return nil, errors.New("timeout: req.Context().Err()")
+	case err := <-cancelc:
+		if err == errRequestCanceled {
+			err = errRequestCanceledConn
+		}
+		return nil, err
+	default:
+		// return below
 	}
 	return w.pc, w.err
 }
@@ -1147,40 +1168,8 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 		headerFn(req.extraHeaders())
 	}
 
-	// Ask for a compressed version if the caller didn't set their
-	// own value for Accept-Encoding. We only attempt to
-	// uncompress the gzip stream if we were the layer that
-	// requested it.
-	requestedGzip := false
-	// TODO(spongehah) gzip(pc.roundTrip)
-	if !pc.t.DisableCompression &&
-		req.Header.Get("Accept-Encoding") == "" &&
-		req.Header.Get("Range") == "" &&
-		req.Method != "HEAD" {
-		// Request gzip only, not deflate. Deflate is ambiguous and
-		// not as universally supported anyway.
-		// See: https://zlib.net/zlib_faq.html#faq39
-		//
-		// Note that we don't request this for HEAD requests,
-		// due to a bug in nginx:
-		//   https://trac.nginx.org/nginx/ticket/358
-		//   https://golang.org/issue/5522
-		//
-		// We don't request gzip if the request is for a range, since
-		// auto-decoding a portion of a gzipped document will just fail
-		// anyway. See https://golang.org/issue/8923
-		requestedGzip = true
-		req.extraHeaders().Set("Accept-Encoding", "gzip")
-	}
-
-	// The 100-continue operation in Hyper is handled in the newHyperRequest function.
-
-	// Keep-Alive
-	if pc.t.DisableKeepAlives &&
-		!req.wantsClose() &&
-		!isProtocolSwitchHeader(req.Header) {
-		req.extraHeaders().Set("Connection", "close")
-	}
+	// Set extra headers, such as Accept-Encoding, Connection(Keep-Alive).
+	requestedGzip := pc.setExtraHeaders(req)
 
 	gone := make(chan struct{}, 1)
 	defer close(gone)
@@ -1208,7 +1197,6 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	}
 
 	if pc.client == nil && !pc.isReused() {
-		println("first")
 		// Hookup the IO
 		hyperIo := newIoWithConnReadWrite(pc.conn)
 		// We need an executor generally to poll futures
@@ -1222,7 +1210,6 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 		// Send the request to readWriteLoop().
 		pc.t.exec.Push(handshakeTask)
 	} else {
-		println("second")
 		taskData.taskId = read
 		err = req.write(pc.client, taskData, pc.t.exec)
 		if err != nil {
@@ -1309,263 +1296,210 @@ func readWriteLoop(checker *libuv.Check) {
 		if task == nil {
 			return
 		}
-		taskData := (*taskData)(task.Userdata())
-		taskId := notSet
-		var err error
-		if taskData != nil {
-			// If original taskId is set, we need to check it
-			err = checkTaskType(task, taskData)
-			if err != nil {
-				task.Free()
-				continue
-			}
-			taskId = taskData.taskId
-		}
+		t.handleTask(task)
+	}
+}
+
+func (t *Transport) handleTask(task *hyper.Task) {
+	taskData := (*taskData)(task.Userdata())
+	if taskData == nil {
+		// A background task for hyper_client completed...
+		task.Free()
+		return
+	}
+	var err error
+	pc := taskData.pc
+	// If original taskId is set, we need to check it
+	err = checkTaskType(task, taskData)
+	if err != nil {
+		readLoopDefer(pc, true)
+		return
+	}
+	switch taskData.taskId {
+	case handshake:
 		if debugReadWriteLoop {
-			println("taskId: ", taskId)
+			println("write")
 		}
-		pc := taskData.pc
-		switch taskId {
-		case handshake:
-			if debugReadWriteLoop {
-				println("write")
-			}
 
-			// Check if the connection is closed
-			select {
-			case <-pc.closech:
-				task.Free()
-				continue
-			default:
-			}
-
-			pc.client = (*hyper.ClientConn)(task.Value())
+		// Check if the connection is closed
+		select {
+		case <-pc.closech:
 			task.Free()
+			return
+		default:
+		}
 
-			// TODO(spongehah) Proxy(writeLoop)
-			taskData.taskId = read
-			err = taskData.req.Request.write(pc.client, taskData, t.exec)
+		pc.client = (*hyper.ClientConn)(task.Value())
+		task.Free()
 
-			if err != nil {
-				//pc.writeErrCh <- err // to the body reader, which might recycle us
-				taskData.writeErrCh <- err // to the roundTrip function
-				pc.close(err)
-				continue
-			}
+		// TODO(spongehah) Proxy(writeLoop)
+		taskData.taskId = read
+		err = taskData.req.Request.write(pc.client, taskData, t.exec)
 
-			if debugReadWriteLoop {
-				println("write end")
-			}
-		case read:
-			if debugReadWriteLoop {
-				println("read")
-			}
+		if err != nil {
+			//pc.writeErrCh <- err // to the body reader, which might recycle us
+			taskData.writeErrCh <- err // to the roundTrip function
+			pc.close(err)
+			return
+		}
 
-			// Take the results
-			hyperResp := (*hyper.Response)(task.Value())
-			task.Free()
+		if debugReadWriteLoop {
+			println("write end")
+		}
+	case read:
+		if debugReadWriteLoop {
+			println("read")
+		}
 
-			//pc.mu.Lock()
-			if pc.numExpectedResponses == 0 {
-				pc.readLoopPeekFailLocked(hyperResp, err)
-				pc.mu.Unlock()
-				// defer
-				readLoopDefer(pc, t)
-				continue
-			}
-			//pc.mu.Unlock()
+		// Take the results
+		hyperResp := (*hyper.Response)(task.Value())
+		task.Free()
 
-			var resp *Response
-			if err == nil {
-				var pr *io.PipeReader
-				pr, taskData.bodyWriter = io.Pipe()
-				resp, err = ReadResponse(pr, taskData.req.Request, hyperResp)
-				taskData.respBody = hyperResp.Body()
-			} else {
-				err = transportReadFromServerError{err}
-				pc.closeErr = err
-			}
+		//pc.mu.Lock()
+		if pc.numExpectedResponses == 0 {
+			pc.readLoopPeekFailLocked(hyperResp, err)
+			pc.mu.Unlock()
+			readLoopDefer(pc, true)
+			return
+		}
+		//pc.mu.Unlock()
 
-			// No longer need the response
-			hyperResp.Free()
+		var resp *Response
+		if err == nil {
+			var pr *io.PipeReader
+			pr, taskData.bodyWriter = io.Pipe()
+			resp, err = ReadResponse(pr, taskData.req.Request, hyperResp)
+			taskData.respBody = hyperResp.Body()
+		} else {
+			err = transportReadFromServerError{err}
+			pc.closeErr = err
+		}
 
-			if err != nil {
-				select {
-				case taskData.resc <- responseAndError{err: err}:
-				case <-taskData.callerGone:
-					// defer
-					readLoopDefer(pc, t)
-					continue
-				}
-				// defer
-				readLoopDefer(pc, t)
-				continue
-			}
+		// No longer need the response
+		hyperResp.Free()
 
-			dataTask := taskData.respBody.Data()
-			taskData.taskId = readBodyChunk
-			dataTask.SetUserdata(c.Pointer(taskData))
-			t.exec.Push(dataTask)
-
-			if !taskData.req.deadline.IsZero() {
-				(*timeoutData)((*libuv.Handle)(c.Pointer(taskData.req.timer)).GetData()).taskData = taskData
-			}
-
-			//pc.mu.Lock()
-			pc.numExpectedResponses--
-			//pc.mu.Unlock()
-
-			bodyWritable := resp.bodyIsWritable()
-			hasBody := taskData.req.Method != "HEAD" && resp.ContentLength != 0
-
-			if resp.Close || taskData.req.Close || resp.StatusCode <= 199 || bodyWritable {
-				// Don't do keep-alive on error if either party requested a close
-				// or we get an unexpected informational (1xx) response.
-				// StatusCode 100 is already handled above.
-				pc.alive = false
-			}
-
-			if !hasBody || bodyWritable {
-				replaced := pc.t.replaceReqCanceler(taskData.req.cancelKey, nil)
-
-				// Put the idle conn back into the pool before we send the response
-				// so if they process it quickly and make another request, they'll
-				// get this same conn. But we use the unbuffered channel 'rc'
-				// to guarantee that persistConn.roundTrip got out of its select
-				// potentially waiting for this persistConn to close.
-				pc.alive = pc.alive &&
-					replaced && pc.tryPutIdleConn()
-
-				if bodyWritable {
-					pc.closeErr = errCallerOwnsConn
-				}
-
-				select {
-				case taskData.resc <- responseAndError{res: resp}:
-				case <-taskData.callerGone:
-					// defer
-					readLoopDefer(pc, t)
-					continue
-				}
-				// Now that they've read from the unbuffered channel, they're safely
-				// out of the select that also waits on this goroutine to die, so
-				// we're allowed to exit now if needed (if alive is false)
-				if pc.alive == false {
-					// defer
-					readLoopDefer(pc, t)
-				}
-				continue
-			}
-
-			body := &bodyEOFSignal{
-				body: resp.Body,
-				earlyCloseFn: func() error {
-					taskData.bodyWriter.Close()
-					return nil
-				},
-				fn: func(err error) error {
-					isEOF := err == io.EOF
-					if !isEOF {
-						if cerr := pc.canceled(); cerr != nil {
-							return cerr
-						}
-					}
-					return err
-				},
-			}
-			resp.Body = body
-
-			// TODO(spongehah) gzip(readWriteLoop)
-			//if taskData.addedGzip && EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
-			//	println("gzip reader")
-			//	resp.Body = &gzipReader{body: body}
-			//	resp.Header.Del("Content-Encoding")
-			//	resp.Header.Del("Content-Length")
-			//	resp.ContentLength = -1
-			//	resp.Uncompressed = true
-			//}
-
-			// TODO(spongehah) select blocking(readWriteLoop)
-			//select {
-			//case taskData.resc <- responseAndError{res: resp}:
-			//case <-taskData.callerGone:
-			//	// defer
-			//	readLoopDefer(pc, t)
-			//	continue
-			//}
+		if err != nil {
 			select {
+			case taskData.resc <- responseAndError{err: err}:
 			case <-taskData.callerGone:
-				// defer
-				readLoopDefer(pc, t)
-				continue
-			default:
+				readLoopDefer(pc, true)
+				return
 			}
-			taskData.resc <- responseAndError{res: resp}
+			readLoopDefer(pc, true)
+			return
+		}
 
-			if debugReadWriteLoop {
-				println("read end")
-			}
-		case readBodyChunk:
-			// A background task of reading the response body is completed
-			if debugReadWriteLoop {
-				println("readBodyChunk")
-			}
+		dataTask := taskData.respBody.Data()
+		taskData.taskId = readBodyChunk
+		dataTask.SetUserdata(c.Pointer(taskData))
+		t.exec.Push(dataTask)
 
-			taskType := task.Type()
-			if taskType == hyper.TaskBuf {
-				chunk := (*hyper.Buf)(task.Value())
-				chunkLen := chunk.Len()
-				println(1)
-				bytes := unsafe.Slice(chunk.Bytes(), chunkLen)
-				println(2)
-				// Free chunk and task
-				chunk.Free()
-				task.Free()
-				// Write to the channel
-				_, err = taskData.bodyWriter.Write(bytes)
-				if err != nil {
-					fmt.Println("write error: ", err)
-					taskData.bodyWriter.Close()
-				}
-				dataTask := taskData.respBody.Data()
-				dataTask.SetUserdata(c.Pointer(taskData))
-				t.exec.Push(dataTask)
-				continue
-			}
+		if !taskData.req.deadline.IsZero() {
+			(*timeoutData)((*libuv.Handle)(c.Pointer(taskData.req.timer)).GetData()).taskData = taskData
+		}
 
-			println(3)
-			// taskType == taskEmpty (check in checkTaskType)
+		//pc.mu.Lock()
+		pc.numExpectedResponses--
+		//pc.mu.Unlock()
+
+		needContinue := resp.checkRespBody(taskData)
+		if needContinue {
+			return
+		}
+
+		resp.wrapBodyEOFSignalAndGzip(taskData)
+
+		// TODO(spongehah) select blocking(readWriteLoop)
+		//select {
+		//case taskData.resc <- responseAndError{res: resp}:
+		//case <-taskData.callerGone:
+		//	// defer
+		//	readLoopDefer(pc, true)
+		//	continue
+		//}
+		select {
+		case <-taskData.callerGone:
+			readLoopDefer(pc, true)
+			return
+		default:
+		}
+		taskData.resc <- responseAndError{res: resp}
+
+		if debugReadWriteLoop {
+			println("read end")
+		}
+	case readBodyChunk:
+		if debugReadWriteLoop {
+			println("readBodyChunk")
+		}
+
+		taskType := task.Type()
+		if taskType == hyper.TaskBuf {
+			chunk := (*hyper.Buf)(task.Value())
+			chunkLen := chunk.Len()
+			bytes := unsafe.Slice(chunk.Bytes(), chunkLen)
+			// Free chunk and task
+			chunk.Free()
 			task.Free()
-			taskData.respBody.Free()
-			if taskData.bodyWriter != nil {
+			// Write to the channel
+			_, err = taskData.bodyWriter.Write(bytes)
+			if err != nil {
+				fmt.Println("write error: ", err)
 				taskData.bodyWriter.Close()
 			}
+			dataTask := taskData.respBody.Data()
+			dataTask.SetUserdata(c.Pointer(taskData))
+			t.exec.Push(dataTask)
+			return
+		}
 
-			replaced := t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
-			pc.alive = pc.alive &&
-				replaced && pc.tryPutIdleConn()
+		// taskType == taskEmpty (check in checkTaskType)
+		task.Free()
+		taskData.respBody.Free()
+		if taskData.bodyWriter != nil {
+			taskData.bodyWriter.Close()
+		}
 
-			if pc.alive == false {
-				// defer
-				readLoopDefer(pc, t)
-			}
+		replaced := t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
+		pc.alive = pc.alive &&
+			replaced && pc.tryPutIdleConn()
 
-			if debugReadWriteLoop {
-				println("readBodyChunk end")
-			}
-		case notSet:
-			if debugReadWriteLoop {
-				println("notSet")
-			}
-			// A background task for hyper_client completed...
-			task.Free()
+		readLoopDefer(pc, false)
+
+		if debugReadWriteLoop {
+			println("readBodyChunk end")
 		}
 	}
 }
 
-func readLoopDefer(pc *persistConn, t *Transport) {
+type bodyChunk struct {
+	chunk        []byte
+	readCh       chan []byte
+	readToReadCh chan struct{}
+}
+
+func (bc *bodyChunk) Read(p []byte) (n int, err error) {
+	if len(bc.chunk) == 0 {
+		n = copy(p, bc.chunk)
+		bc.chunk = bc.chunk[n:]
+		if len(bc.chunk) > 0 {
+			return
+		}
+	}
+	bc.readToReadCh <- struct{}{}
+	bc.chunk = <-bc.readCh
+	n = copy(p, bc.chunk)
+	bc.chunk = bc.chunk[n:]
+	return
+}
+
+// readLoopDefer Replace the defer function of readLoop in stdlib
+func readLoopDefer(pc *persistConn, force bool) {
+	if pc.alive == true && !force {
+		return
+	}
 	pc.close(pc.closeErr)
-	t.removeIdleConn(pc)
+	pc.t.removeIdleConn(pc)
 }
 
 // ----------------------------------------------------------
@@ -1596,8 +1530,7 @@ type taskData struct {
 type taskId c.Int
 
 const (
-	notSet taskId = iota
-	handshake
+	handshake taskId = iota + 1
 	read
 	readBodyChunk
 )
@@ -1757,8 +1690,7 @@ func onTimeout(timer *libuv.Timer) {
 		pc := taskData.pc
 		pc.alive = false
 		pc.t.cancelRequest(taskData.req.cancelKey, errors.New("timeout: req.Context().Err()"))
-		// defer
-		readLoopDefer(pc, pc.t)
+		readLoopDefer(pc, true)
 	}
 }
 
@@ -1795,13 +1727,12 @@ func checkTaskType(task *hyper.Task, taskData *taskData) (err error) {
 		}
 	}
 	if err != nil {
-		switch curTaskId {
-		case handshake, read:
+		task.Free()
+		if curTaskId == handshake || curTaskId == read {
 			taskData.writeErrCh <- err
 			taskData.pc.close(err)
-		case readBodyChunk:
-			readLoopDefer(taskData.pc, taskData.pc.t)
 		}
+		taskData.pc.alive = false
 	}
 	return
 }
@@ -2206,6 +2137,45 @@ func (pc *persistConn) readLoopPeekFailLocked(resp *hyper.Response, err error) {
 		return
 	}
 	pc.closeLocked(fmt.Errorf("readLoopPeekFailLocked: %w", err))
+}
+
+// setExtraHeaders Set extra headers, such as Accept-Encoding, Connection(Keep-Alive).
+func (pc *persistConn) setExtraHeaders(req *transportRequest) bool {
+	// Ask for a compressed version if the caller didn't set their
+	// own value for Accept-Encoding. We only attempt to
+	// uncompress the gzip stream if we were the layer that
+	// requested it.
+	requestedGzip := false
+	// TODO(spongehah) gzip(pc.roundTrip)
+	//if !pc.t.DisableCompression &&
+	//	req.Header.Get("Accept-Encoding") == "" &&
+	//	req.Header.Get("Range") == "" &&
+	//	req.Method != "HEAD" {
+	//	// Request gzip only, not deflate. Deflate is ambiguous and
+	//	// not as universally supported anyway.
+	//	// See: https://zlib.net/zlib_faq.html#faq39
+	//	//
+	//	// Note that we don't request this for HEAD requests,
+	//	// due to a bug in nginx:
+	//	//   https://trac.nginx.org/nginx/ticket/358
+	//	//   https://golang.org/issue/5522
+	//	//
+	//	// We don't request gzip if the request is for a range, since
+	//	// auto-decoding a portion of a gzipped document will just fail
+	//	// anyway. See https://golang.org/issue/8923
+	//	requestedGzip = true
+	//	req.extraHeaders().Set("Accept-Encoding", "gzip")
+	//}
+
+	// The 100-continue operation in Hyper is handled in the newHyperRequest function.
+
+	// Keep-Alive
+	if pc.t.DisableKeepAlives &&
+		!req.wantsClose() &&
+		!isProtocolSwitchHeader(req.Header) {
+		req.extraHeaders().Set("Connection", "close")
+	}
+	return requestedGzip
 }
 
 func is408Message(resp *hyper.Response) bool {

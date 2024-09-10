@@ -117,3 +117,74 @@ func (r *Response) bodyIsWritable() bool {
 	_, ok := r.Body.(io.Writer)
 	return ok
 }
+
+func (resp *Response) checkRespBody(taskData *taskData) (needContinue bool) {
+	pc := taskData.pc
+	bodyWritable := resp.bodyIsWritable()
+	hasBody := taskData.req.Method != "HEAD" && resp.ContentLength != 0
+
+	if resp.Close || taskData.req.Close || resp.StatusCode <= 199 || bodyWritable {
+		// Don't do keep-alive on error if either party requested a close
+		// or we get an unexpected informational (1xx) response.
+		// StatusCode 100 is already handled above.
+		pc.alive = false
+	}
+
+	if !hasBody || bodyWritable {
+		replaced := pc.t.replaceReqCanceler(taskData.req.cancelKey, nil)
+
+		// Put the idle conn back into the pool before we send the response
+		// so if they process it quickly and make another request, they'll
+		// get this same conn. But we use the unbuffered channel 'rc'
+		// to guarantee that persistConn.roundTrip got out of its select
+		// potentially waiting for this persistConn to close.
+		pc.alive = pc.alive &&
+			replaced && pc.tryPutIdleConn()
+
+		if bodyWritable {
+			pc.closeErr = errCallerOwnsConn
+		}
+
+		select {
+		case taskData.resc <- responseAndError{res: resp}:
+		case <-taskData.callerGone:
+			readLoopDefer(pc, true)
+			return true
+		}
+		// Now that they've read from the unbuffered channel, they're safely
+		// out of the select that also waits on this goroutine to die, so
+		// we're allowed to exit now if needed (if alive is false)
+		readLoopDefer(pc, false)
+		return true
+	}
+	return false
+}
+
+func (r *Response) wrapBodyEOFSignalAndGzip(taskData *taskData) {
+	body := &bodyEOFSignal{
+		body: r.Body,
+		earlyCloseFn: func() error {
+			taskData.bodyWriter.Close()
+			return nil
+		},
+		fn: func(err error) error {
+			isEOF := err == io.EOF
+			if !isEOF {
+				if cerr := taskData.pc.canceled(); cerr != nil {
+					return cerr
+				}
+			}
+			return err
+		},
+	}
+	r.Body = body
+	// TODO(spongehah) gzip(wrapBodyEOFSignal)
+	//if taskData.addedGzip && EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
+	//	println("gzip reader")
+	//	r.Body = &gzipReader{body: body}
+	//	r.Header.Del("Content-Encoding")
+	//	r.Header.Del("Content-Length")
+	//	r.ContentLength = -1
+	//	r.Uncompressed = true
+	//}
+}
