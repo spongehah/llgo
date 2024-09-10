@@ -1153,25 +1153,25 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	// requested it.
 	requestedGzip := false
 	// TODO(spongehah) gzip(pc.roundTrip)
-	//if !pc.t.DisableCompression &&
-	//	req.Header.Get("Accept-Encoding") == "" &&
-	//	req.Header.Get("Range") == "" &&
-	//	req.Method != "HEAD" {
-	//	// Request gzip only, not deflate. Deflate is ambiguous and
-	//	// not as universally supported anyway.
-	//	// See: https://zlib.net/zlib_faq.html#faq39
-	//	//
-	//	// Note that we don't request this for HEAD requests,
-	//	// due to a bug in nginx:
-	//	//   https://trac.nginx.org/nginx/ticket/358
-	//	//   https://golang.org/issue/5522
-	//	//
-	//	// We don't request gzip if the request is for a range, since
-	//	// auto-decoding a portion of a gzipped document will just fail
-	//	// anyway. See https://golang.org/issue/8923
-	//	requestedGzip = true
-	//	req.extraHeaders().Set("Accept-Encoding", "gzip")
-	//}
+	if !pc.t.DisableCompression &&
+		req.Header.Get("Accept-Encoding") == "" &&
+		req.Header.Get("Range") == "" &&
+		req.Method != "HEAD" {
+		// Request gzip only, not deflate. Deflate is ambiguous and
+		// not as universally supported anyway.
+		// See: https://zlib.net/zlib_faq.html#faq39
+		//
+		// Note that we don't request this for HEAD requests,
+		// due to a bug in nginx:
+		//   https://trac.nginx.org/nginx/ticket/358
+		//   https://golang.org/issue/5522
+		//
+		// We don't request gzip if the request is for a range, since
+		// auto-decoding a portion of a gzipped document will just fail
+		// anyway. See https://golang.org/issue/8923
+		requestedGzip = true
+		req.extraHeaders().Set("Accept-Encoding", "gzip")
+	}
 
 	// The 100-continue operation in Hyper is handled in the newHyperRequest function.
 
@@ -1402,16 +1402,12 @@ func readWriteLoop(checker *libuv.Check) {
 				continue
 			}
 
-			//bodyForeachTask := respBody.Foreach(appendToResponseBody, c.Pointer(taskData.bodyWriter))
-			//taskData.taskId = readDone
-			//bodyForeachTask.SetUserdata(c.Pointer(taskData))
-			//t.exec.Push(bodyForeachTask)
 			dataTask := taskData.respBody.Data()
-			taskData.taskId = readDone
+			taskData.taskId = readBodyChunk
 			dataTask.SetUserdata(c.Pointer(taskData))
 			t.exec.Push(dataTask)
 
-			if taskData.req.timer != nil {
+			if !taskData.req.deadline.IsZero() {
 				(*timeoutData)((*libuv.Handle)(c.Pointer(taskData.req.timer)).GetData()).taskData = taskData
 			}
 
@@ -1509,19 +1505,23 @@ func readWriteLoop(checker *libuv.Check) {
 			if debugReadWriteLoop {
 				println("read end")
 			}
-		case readDone:
+		case readBodyChunk:
 			// A background task of reading the response body is completed
 			if debugReadWriteLoop {
-				println("readDone")
+				println("readBodyChunk")
 			}
 
 			taskType := task.Type()
 			if taskType == hyper.TaskBuf {
 				chunk := (*hyper.Buf)(task.Value())
 				chunkLen := chunk.Len()
+				println(1)
 				bytes := unsafe.Slice(chunk.Bytes(), chunkLen)
+				println(2)
+				// Free chunk and task
 				chunk.Free()
 				task.Free()
+				// Write to the channel
 				_, err = taskData.bodyWriter.Write(bytes)
 				if err != nil {
 					fmt.Println("write error: ", err)
@@ -1533,6 +1533,7 @@ func readWriteLoop(checker *libuv.Check) {
 				continue
 			}
 
+			println(3)
 			// taskType == taskEmpty (check in checkTaskType)
 			task.Free()
 			taskData.respBody.Free()
@@ -1540,15 +1541,8 @@ func readWriteLoop(checker *libuv.Check) {
 				taskData.bodyWriter.Close()
 			}
 
-			//if taskData.bodyWriter != nil {
-			//	taskData.bodyWriter.Close()
-			//}
-			//bodyEOF := task.Type() == hyper.TaskEmpty
-			//task.Free()
-
 			replaced := t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
 			pc.alive = pc.alive &&
-				//bodyEOF &&
 				replaced && pc.tryPutIdleConn()
 
 			if pc.alive == false {
@@ -1557,7 +1551,7 @@ func readWriteLoop(checker *libuv.Check) {
 			}
 
 			if debugReadWriteLoop {
-				println("readDone end")
+				println("readBodyChunk end")
 			}
 		case notSet:
 			if debugReadWriteLoop {
@@ -1605,7 +1599,7 @@ const (
 	notSet taskId = iota
 	handshake
 	read
-	readDone
+	readBodyChunk
 )
 
 func (conn *connData) Close() error {
@@ -1794,9 +1788,9 @@ func checkTaskType(task *hyper.Task, taskData *taskData) (err error) {
 			if taskType != hyper.TaskResponse {
 				err = errors.New("[readWriteLoop::read]unexpected task type\n")
 			}
-		case readDone:
+		case readBodyChunk:
 			if taskType != hyper.TaskBuf && taskType != hyper.TaskEmpty {
-				err = errors.New("[readWriteLoop::readDone]unexpected task type\n")
+				err = errors.New("[readWriteLoop::readBodyChunk]unexpected task type\n")
 			}
 		}
 	}
@@ -1805,7 +1799,7 @@ func checkTaskType(task *hyper.Task, taskData *taskData) (err error) {
 		case handshake, read:
 			taskData.writeErrCh <- err
 			taskData.pc.close(err)
-		case readDone:
+		case readBodyChunk:
 			readLoopDefer(taskData.pc, taskData.pc.t)
 		}
 	}

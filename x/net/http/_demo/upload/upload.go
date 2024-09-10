@@ -11,7 +11,7 @@ import (
 func main() {
 	url := "http://httpbin.org/post"
 	//url := "http://localhost:8080"
-	filePath := "/Users/spongehah/go/src/llgo/x/net/http/_demo/upload/example.txt" // Replace with your file path
+	filePath := "/Users/spongehah/Documents/code/GOPATH/src/llgo/x/net/http/_demo/upload/example.txt" // Replace with your file path
 	//filePath := "/Users/spongehah/Downloads/xiaoshuo.txt" // Replace with your file path
 
 	file, err := os.Open(filePath)

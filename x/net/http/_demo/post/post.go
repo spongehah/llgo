@@ -17,6 +17,7 @@ func main() {
 	}
 	defer resp.Body.Close()
 	fmt.Println(resp.Status)
+	resp.PrintHeaders()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)
