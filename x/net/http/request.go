@@ -38,7 +38,7 @@ type Request struct {
 	RemoteAddr string
 	RequestURI string
 	//TLS              *tls.ConnectionState
-	Cancel <-chan struct{}
+	//Cancel <-chan struct{}
 
 	Response *Response
 	ctx      context.Context
@@ -102,7 +102,7 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 // redirects can replay the body), and Body is set to NoBody if the
 // ContentLength is 0.
 func NewRequestWithContext(ctx context.Context, method, urlStr string, body io.Reader) (*Request, error) {
-	// TODO(spongehah) Hyper only supports http
+	// TODO(hah) Hyper only supports http
 	isHttpPrefix := strings.HasPrefix(urlStr, "http://")
 	isHttpsPrefix := strings.HasPrefix(urlStr, "https://")
 	if !isHttpPrefix && !isHttpsPrefix {

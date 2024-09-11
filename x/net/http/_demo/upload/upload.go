@@ -36,7 +36,11 @@ func main() {
 	}
 	defer resp.Body.Close()
 	fmt.Println("Status:", resp.Status)
-	resp.PrintHeaders()
+	for key, values := range resp.Header {
+		for _, value := range values {
+			fmt.Printf("%s: %s\n", key, value)
+		}
+	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)

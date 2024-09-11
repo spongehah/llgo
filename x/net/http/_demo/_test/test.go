@@ -1,33 +1,26 @@
 package main
 
-import (
-	"fmt"
-	"io"
-	"net/http"
-	"time"
-)
+import "sync"
+
+var once sync.Once
+
+var count = true
+
+func worker(wg *sync.WaitGroup) {
+	defer wg.Done()
+	once.Do(func() {
+		count = false
+	})
+	if count {
+		println("count is true")
+	}
+}
 
 func main() {
-	client := &http.Client{
-		Timeout: time.Second,
+	var wg sync.WaitGroup
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go worker(&wg)
 	}
-
-	req, err := http.NewRequest("GET", "http://www.baidu.com", nil)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer resp.Body.Close()
-	time.Sleep(2 * time.Second)
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(body))
+	wg.Wait()
 }
