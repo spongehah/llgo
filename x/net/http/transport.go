@@ -73,6 +73,8 @@ type Transport struct {
 	loop         *libuv.Loop
 	async        *libuv.Async
 	exec         *hyper.Executor
+	inited       bool
+	count        int
 }
 
 // A cancelKey is the key of the reqCanceler map.
@@ -182,6 +184,9 @@ func (tr *transportRequest) setError(err error) {
 
 func (t *Transport) putOrCloseIdleConn(pconn *persistConn) {
 	if err := t.tryPutIdleConn(pconn); err != nil {
+		if debugSwitch {
+			println("############### putOrCloseIdleConn: close")
+		}
 		pconn.close(err)
 	}
 }
@@ -273,6 +278,9 @@ func (t *Transport) tryPutIdleConn(pconn *persistConn) error {
 	t.idleLRU.add(pconn)
 	if t.MaxIdleConns != 0 && t.idleLRU.len() > t.MaxIdleConns {
 		oldest := t.idleLRU.removeOldest()
+		if debugSwitch {
+			println("############### tryPutIdleConn: removeOldest")
+		}
 		oldest.close(errTooManyIdle)
 		t.removeIdleConnLocked(oldest)
 	}
@@ -402,9 +410,10 @@ func (t *Transport) removeIdleConn(pconn *persistConn) bool {
 
 // t.idleMu must be held.
 func (t *Transport) removeIdleConnLocked(pconn *persistConn) bool {
-	if pconn.idleTimer != nil {
+	if pconn.idleTimer != nil && (*libuv.Handle)(c.Pointer(pconn.idleTimer)).IsClosing() == 0 {
 		pconn.idleTimer.Stop()
 		(*libuv.Handle)(c.Pointer(pconn.idleTimer)).Close(nil)
+		pconn.idleTimer = nil
 	}
 	t.idleLRU.remove(pconn)
 	key := pconn.cacheKey
@@ -533,14 +542,17 @@ func (t *Transport) closeLocked(err error) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	if t.loop != nil {
+	if t.loop != nil && (*libuv.Handle)(c.Pointer(t.loop)).IsClosing() == 0 {
 		t.loop.Close()
+		t.loop = nil
 	}
-	if t.async != nil {
+	if t.async != nil && (*libuv.Handle)(c.Pointer(t.async)).IsClosing() == 0 {
 		t.async.Close(nil)
+		t.async = nil
 	}
 	if t.exec != nil {
 		t.exec.Free()
+		t.exec = nil
 	}
 }
 
@@ -560,6 +572,8 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		println("############### RoundTrip start")
 		defer println("############### RoundTrip end")
 	}
+
+	//t.reqMu.Lock()
 	t.loopInitOnce.Do(func() {
 		println("############### init loop")
 		t.loop = libuv.LoopNew()
@@ -568,16 +582,30 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 
 		t.loop.Async(t.async, nil)
 
-		checker := &libuv.Check{}
-		libuv.InitCheck(t.loop, checker)
+		checker := &libuv.Idle{}
+		libuv.InitIdle(t.loop, checker)
 		(*libuv.Handle)(c.Pointer(checker)).SetData(c.Pointer(t))
 		checker.Start(readWriteLoop)
 
-		println("################# inited loop")
 		go t.loop.Run(libuv.RUN_DEFAULT)
+		println("################# inited loop")
+		t.inited = true
 	})
+	//t.reqMu.Unlock()
+	t.reqMu.Lock()
+	t.count++
+	t.reqMu.Unlock()
+	defer func() {
+		t.reqMu.Lock()
+		t.count--
+		if t.count == 0 {
+			println("############### close idle connections")
+			t.CloseIdleConnections()
+		}
+		t.reqMu.Unlock()
+	}()
 
-	if t.loop == nil || t.async == nil || t.exec == nil {
+	if !t.inited {
 		return nil, errors.New("transport loop not inited")
 	}
 
@@ -602,7 +630,9 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		stopTimer = func() {
 			close(req.timeoutch)
 			req.timer.Stop()
-			(*libuv.Handle)(c.Pointer(req.timer)).Close(nil)
+			if (*libuv.Handle)(c.Pointer(req.timer)).IsClosing() == 0 {
+				(*libuv.Handle)(c.Pointer(req.timer)).Close(nil)
+			}
 			if debugSwitch {
 				println("############### timer close")
 			}
@@ -1078,23 +1108,13 @@ func (t *Transport) dialConn(timeoutch chan struct{}, cm connectMethod) (pconn *
 	//}
 
 	pconn.closeErr = errReadLoopExiting
-	pconn.tryPutIdleConn = func() bool {
-		if err := pconn.t.tryPutIdleConn(pconn); err != nil {
-			pconn.closeErr = err
-			//if trace != nil && trace.PutIdleConn != nil && err != errKeepAlivesDisabled {
-			//	trace.PutIdleConn(err)
-			//}
-			return false
-		}
-		//if trace != nil && trace.PutIdleConn != nil {
-		//	trace.PutIdleConn(nil)
-		//}
-		return true
-	}
 
 	select {
 	case <-timeoutch:
 		err = errors.New("[t.dialConn] request timeout")
+		if debugSwitch {
+			println("############### dialConn: timeoutch")
+		}
 		pconn.close(err)
 		return nil, err
 	default:
@@ -1185,26 +1205,37 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 		resc:       resc,
 	}
 
-	if pc.client == nil && !pc.isReused() {
-		// Hookup the IO
-		hyperIo := newHyperIo(pc.conn)
-		// We need an executor generally to poll futures
-		// Prepare client options
-		opts := hyper.NewClientConnOptions()
-		opts.Exec(pc.t.exec)
-		// send the handshake
-		handshakeTask := hyper.Handshake(hyperIo, opts)
-		taskData.taskId = handshake
-		handshakeTask.SetUserdata(c.Pointer(taskData))
-		// Send the request to readWriteLoop().
-		pc.t.exec.Push(handshakeTask)
-	} else {
-		taskData.taskId = read
-		err = req.write(pc.client, taskData, pc.t.exec)
-		if err != nil {
-			writeErrCh <- err
-		}
-	}
+	//if pc.client == nil && !pc.reused {
+	//println("############### roundTrip: pc.client == nil")
+	// Hookup the IO
+	hyperIo := newHyperIo(pc.conn)
+	// We need an executor generally to poll futures
+	// Prepare client options
+	opts := hyper.NewClientConnOptions()
+	opts.Exec(pc.t.exec)
+	// send the handshake
+	handshakeTask := hyper.Handshake(hyperIo, opts)
+	taskData.taskId = handshake
+	handshakeTask.SetUserdata(c.Pointer(taskData))
+	// Send the request to readWriteLoop().
+	pc.t.exec.Push(handshakeTask)
+	//} else {
+	//	println("############### roundTrip: pc.client != nil")
+	//	if pc.closed != nil {
+	//		return nil, errors.New("roundTrip: pc is closed")
+	//	}
+	//	select {
+	//	case <-pc.closech:
+	//		return nil, errors.New("roundTrip: pc is closed")
+	//	default:
+	//	}
+	//	taskData.taskId = read
+	//	err = req.write(pc.client, taskData, pc.t.exec)
+	//	if err != nil {
+	//		writeErrCh <- err
+	//		pc.close(err)
+	//	}
+	//}
 
 	// Wake up libuv. Loop
 	pc.t.async.Send()
@@ -1227,6 +1258,9 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 				println("############### roundTrip: writeErrch")
 			}
 			if err != nil {
+				if debugSwitch {
+					println("############### roundTrip: writeErrch err != nil")
+				}
 				pc.close(fmt.Errorf("write error: %w", err))
 				if pc.conn.nwrite == startBytesWritten {
 					err = nothingWrittenError{err}
@@ -1273,7 +1307,7 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 
 // readWriteLoop handles the main I/O loop for a persistent connection.
 // It processes incoming requests, sends them to the server, and handles responses.
-func readWriteLoop(checker *libuv.Check) {
+func readWriteLoop(checker *libuv.Idle) {
 	t := (*Transport)((*libuv.Handle)(c.Pointer(checker)).GetData())
 
 	// The polling state machine! Poll all ready tasks and act on them...
@@ -1299,7 +1333,10 @@ func (t *Transport) handleTask(task *hyper.Task) {
 	// If original taskId is set, we need to check it
 	err = checkTaskType(task, taskData)
 	if err != nil {
-		readLoopDefer(pc, true)
+		if debugSwitch {
+			println("############### handleTask: checkTaskType err != nil")
+		}
+		closeAndRemoveIdleConn(pc, true)
 		return
 	}
 	switch taskData.taskId {
@@ -1316,7 +1353,12 @@ func (t *Transport) handleTask(task *hyper.Task) {
 		default:
 		}
 
+		println("lock1")
+		pc.mu.Lock()
+		println("locked1")
 		pc.client = (*hyper.ClientConn)(task.Value())
+		pc.mu.Unlock()
+
 		task.Free()
 
 		// TODO(hah) Proxy(writeLoop)
@@ -1326,6 +1368,9 @@ func (t *Transport) handleTask(task *hyper.Task) {
 		if err != nil {
 			//pc.writeErrCh <- err // to the body reader, which might recycle us
 			taskData.writeErrCh <- err // to the roundTrip function
+			if debugSwitch {
+				println("############### handleTask: write err != nil")
+			}
 			pc.close(err)
 			return
 		}
@@ -1338,6 +1383,20 @@ func (t *Transport) handleTask(task *hyper.Task) {
 			println("############### read")
 		}
 
+		pc.tryPutIdleConn = func() bool {
+			if err := pc.t.tryPutIdleConn(pc); err != nil {
+				pc.closeErr = err
+				//if trace != nil && trace.PutIdleConn != nil && err != errKeepAlivesDisabled {
+				//	trace.PutIdleConn(err)
+				//}
+				return false
+			}
+			//if trace != nil && trace.PutIdleConn != nil {
+			//	trace.PutIdleConn(nil)
+			//}
+			return true
+		}
+
 		// Take the results
 		hyperResp := (*hyper.Response)(task.Value())
 		task.Free()
@@ -1346,7 +1405,10 @@ func (t *Transport) handleTask(task *hyper.Task) {
 		if pc.numExpectedResponses == 0 {
 			pc.readLoopPeekFailLocked(hyperResp, err)
 			pc.mu.Unlock()
-			readLoopDefer(pc, true)
+			if debugSwitch {
+				println("############### handleTask: numExpectedResponses == 0")
+			}
+			closeAndRemoveIdleConn(pc, true)
 			return
 		}
 		//pc.mu.Unlock()
@@ -1367,13 +1429,21 @@ func (t *Transport) handleTask(task *hyper.Task) {
 		hyperResp.Free()
 
 		if err != nil {
+			pc.bodyChunk.Close()
+			taskData.closeHyperBody()
 			select {
 			case taskData.resc <- responseAndError{err: err}:
 			case <-taskData.callerGone:
-				readLoopDefer(pc, true)
+				if debugSwitch {
+					println("############### handleTask read: callerGone")
+				}
+				closeAndRemoveIdleConn(pc, true)
 				return
 			}
-			readLoopDefer(pc, true)
+			if debugSwitch {
+				println("############### handleTask: read err != nil")
+			}
+			closeAndRemoveIdleConn(pc, true)
 			return
 		}
 
@@ -1401,7 +1471,12 @@ func (t *Transport) handleTask(task *hyper.Task) {
 		case taskData.resc <- responseAndError{res: resp}:
 		case <-taskData.callerGone:
 			// defer
-			readLoopDefer(pc, true)
+			if debugSwitch {
+				println("############### handleTask read: callerGone 2")
+			}
+			pc.bodyChunk.Close()
+			taskData.closeHyperBody()
+			closeAndRemoveIdleConn(pc, true)
 			return
 		}
 
@@ -1431,14 +1506,16 @@ func (t *Transport) handleTask(task *hyper.Task) {
 
 		// taskType == taskEmpty (check in checkTaskType)
 		task.Free()
-		taskData.hyperBody.Free()
-		taskData.hyperBody = nil
 		pc.bodyChunk.Close()
+		taskData.closeHyperBody()
 		replaced := t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
 		pc.alive = pc.alive &&
 			replaced && pc.tryPutIdleConn()
 
-		readLoopDefer(pc, false)
+		if debugSwitch {
+			println("############### handleTask readBodyChunk: alive: ", pc.alive)
+		}
+		closeAndRemoveIdleConn(pc, false)
 
 		if debugReadWriteLoop {
 			println("############### readBodyChunk end [empty]")
@@ -1453,10 +1530,13 @@ func readyToRead(aysnc *libuv.Async) {
 	taskData.pc.t.exec.Push(dataTask)
 }
 
-// readLoopDefer Replace the defer function of readLoop in stdlib
-func readLoopDefer(pc *persistConn, force bool) {
+// closeAndRemoveIdleConn Replace the defer function of readLoop in stdlib
+func closeAndRemoveIdleConn(pc *persistConn, force bool) {
 	if pc.alive == true && !force {
 		return
+	}
+	if debugSwitch {
+		println("############### closeAndRemoveIdleConn, force:", force)
 	}
 	pc.close(pc.closeErr)
 	pc.t.removeIdleConn(pc)
@@ -1472,6 +1552,8 @@ type connData struct {
 	nwrite        int64 // bytes written(Replaced from persistConn's nwrite)
 	readWaker     *hyper.Waker
 	writeWaker    *hyper.Waker
+
+	mu sync.Mutex
 }
 
 type taskData struct {
@@ -1495,6 +1577,12 @@ const (
 )
 
 func (conn *connData) Close() error {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.closeLocked()
+}
+
+func (conn *connData) closeLocked() error {
 	if conn == nil {
 		return nil
 	}
@@ -1510,10 +1598,19 @@ func (conn *connData) Close() error {
 	//	c.Free(c.Pointer(conn.readBuf.Base))
 	//	conn.readBuf.Base = nil
 	//}
-	(*libuv.Handle)(c.Pointer(&conn.tcpHandle)).Close(nil)
+	if (*libuv.Handle)(c.Pointer(&conn.tcpHandle)).IsClosing() == 0 {
+		(*libuv.Handle)(c.Pointer(&conn.tcpHandle)).Close(nil)
+	}
 
 	conn = nil
 	return nil
+}
+
+func (d *taskData) closeHyperBody() {
+	if d.hyperBody != nil {
+		d.hyperBody.Free()
+		d.hyperBody = nil
+	}
 }
 
 // onConnect is the libuv callback for a successful connection
@@ -1524,7 +1621,7 @@ func onConnect(req *libuv.Connect, status c.Int) {
 	}
 	conn := (*connData)((*libuv.Req)(c.Pointer(req)).GetData())
 	// Keep-Alive
-	conn.tcpHandle.KeepAlive(1, 60)
+	//conn.tcpHandle.KeepAlive(1, 60)
 
 	if status < 0 {
 		c.Fprintf(c.Stderr, c.Str("connect error: %d\n"), libuv.Strerror(libuv.Errno(status)))
@@ -1631,7 +1728,7 @@ func onTimeout(timer *libuv.Timer) {
 		pc := taskData.pc
 		pc.alive = false
 		pc.t.cancelRequest(taskData.req.cancelKey, errors.New("timeout: req.Context().Err()"))
-		readLoopDefer(pc, true)
+		closeAndRemoveIdleConn(pc, true)
 	}
 }
 
@@ -1671,11 +1768,16 @@ func checkTaskType(task *hyper.Task, taskData *taskData) (err error) {
 		task.Free()
 		if curTaskId == handshake || curTaskId == read {
 			taskData.writeErrCh <- err
+			if debugSwitch {
+				println("############### checkTaskType: writeErrCh")
+			}
 			taskData.pc.close(err)
 		}
 		if taskData.pc.bodyChunk != nil {
 			taskData.pc.bodyChunk.Close()
+			taskData.pc.bodyChunk = nil
 		}
+		taskData.closeHyperBody()
 		taskData.pc.alive = false
 	}
 	return
@@ -1689,6 +1791,7 @@ func fail(err *hyper.Error, taskId taskId) error {
 		errLen := err.Print((*uint8)(c.Pointer(&errBuf[:][0])), uintptr(len(errBuf)))
 		errDetails := unsafe.SliceData(errBuf[:errLen])
 		details := c.GoString(errDetails)
+		fmt.Println(details)
 
 		// clean up the error
 		err.Free()
@@ -1880,6 +1983,9 @@ type persistConn struct {
 // a "keep-alive" state. It does not interrupt any connections currently
 // in use.
 func (t *Transport) CloseIdleConnections() {
+	if debugSwitch {
+		println("############### CloseIdleConnections")
+	}
 	//t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	t.idleMu.Lock()
 	m := t.idleConn
@@ -1898,6 +2004,9 @@ func (t *Transport) CloseIdleConnections() {
 }
 
 func (pc *persistConn) cancelRequest(err error) {
+	if debugSwitch {
+		println("############### cancelRequest")
+	}
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	pc.canceledErr = err
@@ -1946,7 +2055,7 @@ func (pc *persistConn) closeLocked(err error) {
 				pc.client.Free()
 				pc.client = nil
 			}
-			if pc.chunkAsync != nil {
+			if pc.chunkAsync != nil && pc.chunkAsync.IsClosing() == 0 {
 				pc.chunkAsync.Close(nil)
 				pc.chunkAsync = nil
 			}
@@ -2106,10 +2215,16 @@ func (pc *persistConn) closeConnIfStillIdleLocked() {
 		return
 	}
 	t.removeIdleConnLocked(pc)
+	if debugSwitch {
+		println("############### closeConnIfStillIdleLocked")
+	}
 	pc.close(errIdleConnTimeout)
 }
 
 func (pc *persistConn) readLoopPeekFailLocked(resp *hyper.Response, err error) {
+	if debugSwitch {
+		println("############### readLoopPeekFailLocked")
+	}
 	if pc.closed != nil {
 		return
 	}
