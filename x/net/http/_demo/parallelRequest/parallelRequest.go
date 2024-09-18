@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"sync"
 
 	"github.com/goplus/llgo/x/net/http"
@@ -16,12 +15,12 @@ func worker(id int, wg *sync.WaitGroup) {
 		return
 	}
 	fmt.Println(id, ":", resp.Status)
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(body))
+	//body, err := io.ReadAll(resp.Body)
+	//if err != nil {
+	//	fmt.Println(err)
+	//	return
+	//}
+	//fmt.Println(string(body))
 	resp.Body.Close()
 }
 
@@ -32,7 +31,13 @@ func main() {
 		go worker(i, &wait)
 	}
 	wait.Wait()
-	//t := http.DefaultTransport.(*http.Transport)
-	//t.CloseIdleConnections()
 	fmt.Println("All done")
+
+	resp, err := http.Get("http://www.baidu.com")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(resp.Status)
+	resp.Body.Close()
 }

@@ -1,8 +1,11 @@
 package main
 
-import "github.com/goplus/llgo/c"
+import (
+	"fmt"
+	"net/url"
+)
 
 func main() {
-	count := c.Sysconf(c.Int(58))
-	println(count)
+	URL, _ := url.Parse("http://localhost/get")
+	fmt.Println(URL.String())
 }

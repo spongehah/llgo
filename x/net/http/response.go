@@ -103,6 +103,17 @@ func (r *Response) wrapRespBody(taskData *taskData) {
 	body := &bodyEOFSignal{
 		body: r.Body,
 		earlyCloseFn: func() error {
+			// If the response body is closed prematurely,
+			// the hyperBody needs to be recycled and the persistConn needs to be handled.
+			taskData.closeHyperBody()
+			select {
+			case <-taskData.pc.closech:
+				taskData.pc.t.removeIdleConn(taskData.pc)
+			default:
+			}
+			replaced := taskData.pc.t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
+			taskData.pc.alive = taskData.pc.alive &&
+				replaced && taskData.pc.tryPutIdleConn()
 			return nil
 		},
 		fn: func(err error) error {

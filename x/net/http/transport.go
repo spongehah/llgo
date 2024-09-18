@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log"
 	"net/url"
@@ -40,8 +39,8 @@ const _SC_NPROCESSORS_ONLN c.Int = 58
 
 // Debug switch provided for developers
 const (
-	debugSwitch        = true
-	debugReadWriteLoop = true
+	debugSwitch        = false
+	debugReadWriteLoop = false
 )
 
 type Transport struct {
@@ -72,14 +71,15 @@ type Transport struct {
 
 	loopsMu sync.Mutex
 	loops   []*clientEventLoop
+	curLoop atomic.Uint32
 }
 
 type clientEventLoop struct {
 	// libuv and hyper related
-	loopInitOnce sync.Once
-	loop         *libuv.Loop
-	async        *libuv.Async
-	exec         *hyper.Executor
+	loop      *libuv.Loop
+	async     *libuv.Async
+	exec      *hyper.Executor
+	isRunning atomic.Bool
 }
 
 // A cancelKey is the key of the reqCanceler map.
@@ -538,29 +538,31 @@ func (t *Transport) cancelRequest(key cancelKey, err error) bool {
 	return cancel != nil
 }
 
-//func (t *Transport) close(err error) {
-//	t.reqMu.Lock()
-//	defer t.reqMu.Unlock()
-//	t.closeLocked(err)
-//}
-//
-//func (t *Transport) closeLocked(err error) {
-//	if err != nil {
-//		fmt.Println(err)
-//	}
-//	if t.loops.loop != nil && (*libuv.Handle)(c.Pointer(t.loops.loop)).IsClosing() == 0 {
-//		t.loops.loop.Close()
-//		t.loops.loop = nil
-//	}
-//	if t.loops.async != nil && (*libuv.Handle)(c.Pointer(t.loops.async)).IsClosing() == 0 {
-//		t.loops.async.Close(nil)
-//		t.loops.async = nil
-//	}
-//	if t.loops.exec != nil {
-//		t.loops.exec.Free()
-//		t.loops.exec = nil
-//	}
-//}
+func (t *Transport) close(err error) {
+	t.reqMu.Lock()
+	defer t.reqMu.Unlock()
+	t.closeLocked(err)
+}
+
+func (t *Transport) closeLocked(err error) {
+	if err != nil {
+		fmt.Println(err)
+	}
+	for _, eventLoop := range t.loops {
+		if eventLoop.loop != nil && (*libuv.Handle)(c.Pointer(eventLoop.loop)).IsClosing() == 0 {
+			eventLoop.loop.Close()
+			eventLoop.loop = nil
+		}
+		if eventLoop.async != nil && (*libuv.Handle)(c.Pointer(eventLoop.async)).IsClosing() == 0 {
+			eventLoop.async.Close(nil)
+			eventLoop.async = nil
+		}
+		if eventLoop.exec != nil {
+			eventLoop.exec.Free()
+			eventLoop.exec = nil
+		}
+	}
+}
 
 // ----------------------------------------------------------
 
@@ -573,27 +575,6 @@ func getMilliseconds(deadline time.Time) uint64 {
 	return uint64(milliseconds)
 }
 
-func (t *Transport) newClientEventLoop() *clientEventLoop {
-	eventloop := &clientEventLoop{}
-	eventloop.loop = libuv.LoopNew()
-	eventloop.async = &libuv.Async{}
-	eventloop.exec = hyper.NewExecutor()
-
-	eventloop.loop.Async(eventloop.async, nil)
-
-	checker := &libuv.Idle{}
-	libuv.InitIdle(eventloop.loop, checker)
-	(*libuv.Handle)(c.Pointer(checker)).SetData(c.Pointer(eventloop))
-	checker.Start(readWriteLoop)
-
-	go eventloop.loop.Run(libuv.RUN_DEFAULT)
-	if debugSwitch {
-		println("################# inited loop")
-	}
-	t.loops = append(t.loops, eventloop)
-	return eventloop
-}
-
 var cpuCount int
 
 func init() {
@@ -603,23 +584,65 @@ func init() {
 	}
 }
 
-func (t *Transport) getClientEventLoop(url *url.URL) *clientEventLoop {
-	t.loopsMu.Lock()
-	defer t.loopsMu.Unlock()
-	l := len(t.loops)
-	if l < cpuCount {
-		return t.newClientEventLoop()
-	} else {
-		key := getLoopKey(url)
-		h := fnv.New32a()
-		h.Write([]byte(key))
-		hashcode := h.Sum32()
-		return t.loops[hashcode%uint32(l)]
+func (el *clientEventLoop) run() {
+	if el.isRunning.Load() {
+		return
 	}
+
+	el.loop.Async(el.async, nil)
+
+	checker := &libuv.Idle{}
+	libuv.InitIdle(el.loop, checker)
+	(*libuv.Handle)(c.Pointer(checker)).SetData(c.Pointer(el))
+	checker.Start(readWriteLoop)
+
+	go el.loop.Run(libuv.RUN_DEFAULT)
+
+	el.isRunning.Store(true)
 }
 
-func getLoopKey(url *url.URL) string {
-	return url.Scheme + "://" + canonicalAddr(url)
+func (t *Transport) getOrInitClientEventLoop(i uint32) *clientEventLoop {
+	if el := t.loops[i]; el != nil {
+		return el
+	}
+
+	eventLoop := &clientEventLoop{
+		loop:  libuv.LoopNew(),
+		async: &libuv.Async{},
+		exec:  hyper.NewExecutor(),
+	}
+
+	eventLoop.run()
+
+	t.loops[i] = eventLoop
+	return eventLoop
+}
+
+func (t *Transport) getClientEventLoop(req *Request) *clientEventLoop {
+	t.loopsMu.Lock()
+	defer t.loopsMu.Unlock()
+	if t.loops == nil {
+		t.loops = make([]*clientEventLoop, cpuCount)
+	}
+
+	//key := t.getLoopKey(req)
+	//h := fnv.New32a()
+	//h.Write([]byte(key))
+	//hashcode := h.Sum32()
+	//
+	//return t.getOrInitClientEventLoop(hashcode % uint32(cpuCount))
+
+	i := (t.curLoop.Add(1) - 1) % uint32(cpuCount)
+	return t.getOrInitClientEventLoop(i)
+}
+
+func (t *Transport) getLoopKey(req *Request) string {
+	proxyStr := ""
+	if t.Proxy != nil {
+		proxyURL, _ := t.Proxy(req)
+		proxyStr = proxyURL.String()
+	}
+	return req.URL.String() + proxyStr
 }
 
 func (t *Transport) RoundTrip(req *Request) (*Response, error) {
@@ -628,7 +651,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		defer println("############### RoundTrip end")
 	}
 
-	eventLoop := t.getClientEventLoop(req.URL)
+	eventLoop := t.getClientEventLoop(req)
 
 	// If timeout is set, start the timer
 	var didTimeout func() bool
@@ -742,12 +765,6 @@ func (t *Transport) doRoundTrip(req *Request, loop *clientEventLoop) (*Response,
 	}
 
 	for {
-		//select {
-		//case <-ctx.Done():
-		//	req.closeBody()
-		//	return nil, ctx.Err()
-		//default:
-		//}
 		select {
 		case <-req.timeoutch:
 			req.closeBody()
@@ -784,7 +801,6 @@ func (t *Transport) doRoundTrip(req *Request, loop *clientEventLoop) (*Response,
 			resp, err = pconn.alt.RoundTrip(req)
 		} else {
 			// HTTP/1.X path.
-			println("################# roundTrip")
 			resp, err = pconn.roundTrip(treq)
 		}
 
@@ -884,10 +900,6 @@ func (t *Transport) getConn(treq *transportRequest, cm connectMethod) (pc *persi
 	// what caused w.err; if so, prefer to return the
 	// cancellation error (see golang.org/issue/16049).
 	select {
-	//case <-req.Cancel:
-	//	return nil, errRequestCanceledConn
-	//case <-req.Context().Done():
-	//	return nil, req.Context().Err()
 	case <-req.timeoutch:
 		if debugSwitch {
 			println("############### getConn: timeoutch")
@@ -1038,58 +1050,12 @@ func (t *Transport) dialConn(timeoutch chan struct{}, cm connectMethod) (pconn *
 	}
 	cm.eventLoop.loop.Async(pconn.chunkAsync, readyToRead)
 
-	//trace := httptrace.ContextClientTrace(ctx)
-	//wrapErr := func(err error) error {
-	//	if cm.proxyURL != nil {
-	//		// Return a typed error, per Issue 16997
-	//		return &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
-	//	}
-	//	return err
-	//}
-	//
-	//if cm.scheme() == "https" && t.hasCustomTLSDialer() {
-	//	var err error
-	//	pconn.conn, err = t.customDialTLS(ctx, "tcp", cm.addr())
-	//	if err != nil {
-	//		return nil, wrapErr(err)
-	//	}
-	//	if tc, ok := pconn.conn.(*tls.Conn); ok {
-	//		// Handshake here, in case DialTLS didn't. TLSNextProto below
-	//		// depends on it for knowing the connection state.
-	//		if trace != nil && trace.TLSHandshakeStart != nil {
-	//			trace.TLSHandshakeStart()
-	//		}
-	//		if err := tc.HandshakeContext(ctx); err != nil {
-	//			go pconn.conn.Close()
-	//			if trace != nil && trace.TLSHandshakeDone != nil {
-	//				trace.TLSHandshakeDone(tls.ConnectionState{}, err)
-	//			}
-	//			return nil, err
-	//		}
-	//		cs := tc.ConnectionState()
-	//		if trace != nil && trace.TLSHandshakeDone != nil {
-	//			trace.TLSHandshakeDone(cs, nil)
-	//		}
-	//		pconn.tlsState = &cs
-	//	}
-	//} else {
-	//conn, err := t.dial(ctx, "tcp", cm.addr())
 	conn, err := t.dial(cm)
 	if err != nil {
 		return nil, err
 	}
 	pconn.conn = conn
 
-	//if cm.scheme() == "https" {
-	//	var firstTLSHost string
-	//	if firstTLSHost, _, err = net.SplitHostPort(cm.addr()); err != nil {
-	//		return nil, wrapErr(err)
-	//	}
-	//	if err = pconn.addTLS(ctx, firstTLSHost, trace); err != nil {
-	//		return nil, wrapErr(err)
-	//	}
-	//}
-	//}
 	select {
 	case <-timeoutch:
 		conn.Close()
@@ -1111,23 +1077,6 @@ func (t *Transport) dialConn(timeoutch chan struct{}, cm connectMethod) (pconn *
 		}
 		// case cm.targetScheme == "https":
 	}
-
-	//if cm.proxyURL != nil && cm.targetScheme == "https" {
-	//	if err := pconn.addTLS(ctx, cm.tlsHost(), trace); err != nil {
-	//		return nil, err
-	//	}
-	//}
-	//
-	//if s := pconn.tlsState; s != nil && s.NegotiatedProtocolIsMutual && s.NegotiatedProtocol != "" {
-	//	if next, ok := t.TLSNextProto[s.NegotiatedProtocol]; ok {
-	//		alt := next(cm.targetAddr, pconn.conn.(*tls.Conn))
-	//		if e, ok := alt.(erringRoundTripper); ok {
-	//			// pconn.conn was closed by next (http2configureTransports.upgradeFn).
-	//			return nil, e.RoundTripErr()
-	//		}
-	//		return &persistConn{t: t, cacheKey: pconn.cacheKey, alt: alt}, nil
-	//	}
-	//}
 
 	pconn.closeErr = errReadLoopExiting
 
@@ -1229,7 +1178,6 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	}
 
 	//if pc.client == nil && !pc.isReused() {
-	//	println("############### roundTrip: pc.client == nil")
 	// Hookup the IO
 	hyperIo := newHyperIo(pc.conn)
 	// We need an executor generally to poll futures
@@ -1244,16 +1192,8 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	pc.eventLoop.exec.Push(handshakeTask)
 	//} else {
 	//	println("############### roundTrip: pc.client != nil")
-	//	if pc.closed != nil {
-	//		return nil, errors.New("roundTrip: pc is closed")
-	//	}
-	//	select {
-	//	case <-pc.closech:
-	//		return nil, errors.New("roundTrip: pc is closed")
-	//	default:
-	//	}
 	//	taskData.taskId = read
-	//	err = req.write(pc.client, taskData, pc.t.exec)
+	//	err = req.write(pc.client, taskData, pc.eventLoop.exec)
 	//	if err != nil {
 	//		writeErrCh <- err
 	//		pc.close(err)
@@ -1263,9 +1203,6 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	// Wake up libuv. Loop
 	pc.eventLoop.async.Send()
 
-	//var respHeaderTimer <-chan time.Time
-	//cancelChan := req.Request.Cancel
-	//ctxDoneChan := req.Context().Done()
 	timeoutch := req.timeoutch
 	pcClosed := pc.closech
 	canceled := false
@@ -1310,13 +1247,6 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 				return nil, pc.mapRoundTripError(req, startBytesWritten, re.err)
 			}
 			return re.res, nil
-		//case <-cancelChan:
-		//	canceled = pc.t.cancelRequest(req.cancelKey, errRequestCanceled)
-		//	cancelChan = nil
-		//case <-ctxDoneChan:
-		//	canceled = pc.t.cancelRequest(req.cancelKey, req.Context().Err())
-		//	cancelChan = nil
-		//	ctxDoneChan = nil
 		case <-timeoutch:
 			if debugSwitch {
 				println("############### roundTrip: timeoutch")
@@ -1567,8 +1497,6 @@ type connData struct {
 	nwrite        int64 // bytes written(Replaced from persistConn's nwrite)
 	readWaker     *hyper.Waker
 	writeWaker    *hyper.Waker
-
-	mu sync.Mutex
 }
 
 type taskData struct {
@@ -1592,12 +1520,6 @@ const (
 )
 
 func (conn *connData) Close() error {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	return conn.closeLocked()
-}
-
-func (conn *connData) closeLocked() error {
 	if conn == nil {
 		return nil
 	}
@@ -1609,10 +1531,6 @@ func (conn *connData) closeLocked() error {
 		conn.writeWaker.Free()
 		conn.writeWaker = nil
 	}
-	//if conn.readBuf.Base != nil {
-	//	c.Free(c.Pointer(conn.readBuf.Base))
-	//	conn.readBuf.Base = nil
-	//}
 	if (*libuv.Handle)(c.Pointer(&conn.tcpHandle)).IsClosing() == 0 {
 		(*libuv.Handle)(c.Pointer(&conn.tcpHandle)).Close(nil)
 	}
@@ -1635,13 +1553,15 @@ func onConnect(req *libuv.Connect, status c.Int) {
 		defer println("############### connect end")
 	}
 	conn := (*connData)((*libuv.Req)(c.Pointer(req)).GetData())
-	// Keep-Alive
-	//conn.tcpHandle.KeepAlive(1, 60)
-
 	if status < 0 {
-		c.Fprintf(c.Stderr, c.Str("connect error: %d\n"), libuv.Strerror(libuv.Errno(status)))
+		c.Fprintf(c.Stderr, c.Str("connect error: %s\n"), c.GoString(libuv.Strerror(libuv.Errno(status))))
+		conn.Close()
 		return
 	}
+
+	// Keep-Alive
+	conn.tcpHandle.KeepAlive(1, 60)
+
 	(*libuv.Stream)(c.Pointer(&conn.tcpHandle)).StartRead(allocBuffer, onRead)
 }
 
