@@ -300,6 +300,10 @@ func (r *Request) write(client *hyper.ClientConn, taskData *taskData, exec *hype
 	}
 	// Send it!
 	sendTask := client.Send(hyperReq)
+	if sendTask == nil {
+		println("############### write: sendTask is nil")
+		return errors.New("failed to send the request")
+	}
 	sendTask.SetUserdata(c.Pointer(taskData))
 	sendRes := exec.Push(sendTask)
 	if sendRes != hyper.OK {

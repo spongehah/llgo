@@ -633,7 +633,6 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 	// If timeout is set, start the timer
 	var didTimeout func() bool
 	var stopTimer func()
-	// TODO(hah): Move idleConn to eventLoop
 	// Only the first request will initialize the timer
 	if req.timer == nil && !req.deadline.IsZero() {
 		req.timer = &libuv.Timer{}
@@ -1229,8 +1228,8 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 		resc:       resc,
 	}
 
-	//if pc.client == nil && !pc.reused {
-	//println("############### roundTrip: pc.client == nil")
+	//if pc.client == nil && !pc.isReused() {
+	//	println("############### roundTrip: pc.client == nil")
 	// Hookup the IO
 	hyperIo := newHyperIo(pc.conn)
 	// We need an executor generally to poll futures
@@ -1377,12 +1376,7 @@ func (eventLoop *clientEventLoop) handleTask(task *hyper.Task) {
 		default:
 		}
 
-		println("lock1")
-		pc.mu.Lock()
-		println("locked1")
 		pc.client = (*hyper.ClientConn)(task.Value())
-		pc.mu.Unlock()
-
 		task.Free()
 
 		// TODO(hah) Proxy(writeLoop)
@@ -1453,7 +1447,7 @@ func (eventLoop *clientEventLoop) handleTask(task *hyper.Task) {
 		hyperResp.Free()
 
 		if err != nil {
-			pc.bodyChunk.Close()
+			pc.bodyChunk.closeWithError(err)
 			taskData.closeHyperBody()
 			select {
 			case taskData.resc <- responseAndError{err: err}:
@@ -1471,10 +1465,7 @@ func (eventLoop *clientEventLoop) handleTask(task *hyper.Task) {
 			return
 		}
 
-		dataTask := taskData.hyperBody.Data()
 		taskData.taskId = readBodyChunk
-		dataTask.SetUserdata(c.Pointer(taskData))
-		eventLoop.exec.Push(dataTask)
 
 		if !taskData.req.deadline.IsZero() {
 			(*timeoutData)((*libuv.Handle)(c.Pointer(taskData.req.timer)).GetData()).taskData = taskData
@@ -1530,7 +1521,7 @@ func (eventLoop *clientEventLoop) handleTask(task *hyper.Task) {
 
 		// taskType == taskEmpty (check in checkTaskType)
 		task.Free()
-		pc.bodyChunk.Close()
+		pc.bodyChunk.closeWithError(io.EOF)
 		taskData.closeHyperBody()
 		replaced := pc.t.replaceReqCanceler(taskData.req.cancelKey, nil) // before pc might return to idle pool
 		pc.alive = pc.alive &&
@@ -2019,7 +2010,6 @@ func (t *Transport) CloseIdleConnections() {
 	t.closeIdle = true // close newly idle connections
 	t.idleLRU = connLRU{}
 	t.idleMu.Unlock()
-
 	for _, conns := range m {
 		for _, pconn := range conns {
 			pconn.close(errCloseIdleConns)

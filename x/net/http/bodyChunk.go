@@ -2,7 +2,6 @@ package http
 
 import (
 	"errors"
-	"io"
 
 	"github.com/goplus/llgo/c/libuv"
 )
@@ -30,23 +29,22 @@ func newBodyChunk(asyncHandle *libuv.Async) *bodyChunk {
 }
 
 func (bc *bodyChunk) Read(p []byte) (n int, err error) {
+	select {
+	case <-bc.done:
+		err = bc.readCloseError()
+		return
+	default:
+	}
+
 	for n < len(p) {
 		if len(bc.chunk) == 0 {
+			bc.asyncHandle.Send()
 			select {
-			case chunk, ok := <-bc.readCh:
-				if !ok {
-					if n > 0 {
-						return n, nil
-					}
-					return 0, bc.readCloseError()
-				}
+			case chunk := <-bc.readCh:
 				bc.chunk = chunk
-				bc.asyncHandle.Send()
 			case <-bc.done:
-				if n > 0 {
-					return n, nil
-				}
-				return 0, io.EOF
+				err = bc.readCloseError()
+				return
 			}
 		}
 
@@ -55,11 +53,11 @@ func (bc *bodyChunk) Read(p []byte) (n int, err error) {
 		bc.chunk = bc.chunk[copied:]
 	}
 
-	return n, nil
+	return
 }
 
 func (bc *bodyChunk) Close() error {
-	return bc.closeRead(nil)
+	return bc.closeWithError(nil)
 }
 
 func (bc *bodyChunk) readCloseError() error {
@@ -69,9 +67,12 @@ func (bc *bodyChunk) readCloseError() error {
 	return errClosedBodyChunk
 }
 
-func (bc *bodyChunk) closeRead(err error) error {
+func (bc *bodyChunk) closeWithError(err error) error {
+	if bc.rerr != nil {
+		return nil
+	}
 	if err == nil {
-		err = io.EOF
+		err = errClosedBodyChunk
 	}
 	bc.rerr = err
 	close(bc.done)
