@@ -314,7 +314,7 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 		didTimeout = alwaysFalse
 		defer close(req.timeoutch)
 	} else {
-		didTimeout = func() bool { return req.timer.GetDueIn() == 0 }
+		didTimeout = func() bool { return time.Now().After(deadline) }
 	}
 
 	resp, err = rt.RoundTrip(req)
